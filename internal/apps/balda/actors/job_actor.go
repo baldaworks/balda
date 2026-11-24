@@ -35,6 +35,7 @@ type scheduledJobPayload struct {
 	UserID      string                       `json:"user_id"`
 	TopicID     int                          `json:"topic_id,omitempty"`
 	OneShot     *bool                        `json:"one_shot,omitempty"`
+	KeepSession bool                         `json:"keep_session,omitempty"`
 }
 
 type DeliveryPayload = deliverycmd.Payload
@@ -138,5 +139,6 @@ func (e *JobActorExecutor) startScheduledJob(ctx context.Context, env actorlayer
 		UserID:      payload.UserID,
 		TopicID:     payload.TopicID,
 		OneShot:     payload.OneShot,
+		KeepSession: payload.KeepSession,
 	})
 }

@@ -30,12 +30,15 @@ func TestSQLiteRuntimeOperationStateMigration(t *testing.T) {
 		t.Fatal(err)
 	}
 	insertLegacyRuntimeSession(t, db, func(query string) string { return query })
+	if _, err := provider.UpTo(t.Context(), 72); err != nil {
+		t.Fatal(err)
+	}
+	checkRuntimeOperationStateMigration(t, db, func(query string) string { return query })
+	checkRequestedModelDowngradeProhibited(t, db, func(query string) string { return query }, provider)
 	if _, err := provider.Up(t.Context()); err != nil {
 		t.Fatal(err)
 	}
 	assertSQLiteRuntimeOperationSchema(t, db)
-	checkRuntimeOperationStateMigration(t, db, func(query string) string { return query })
-	checkRequestedModelDowngradeProhibited(t, db, func(query string) string { return query }, provider)
 }
 
 func assertSQLiteRuntimeOperationSchema(t *testing.T, db *sql.DB) {

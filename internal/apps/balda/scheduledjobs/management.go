@@ -38,6 +38,7 @@ type Management struct {
 	executionJobs state.JobLifecycleStore
 	deliveries    state.DeliveryStore
 	resolver      envelopetarget.DestinationResolver
+	sessions      RunSessionCloser
 	now           func() time.Time
 }
 
@@ -53,6 +54,15 @@ func NewManagementWithResolver(jobs state.ScheduledJobStore, store state.Schedul
 	resolver envelopetarget.DestinationResolver) *Management {
 	return &Management{jobs: jobs, store: store, runs: runs, executionJobs: executionJobs,
 		deliveries: deliveries, resolver: resolver, now: time.Now}
+}
+
+// NewManagementWithResolverAndSessions composes schedule policy with retained-session cleanup.
+func NewManagementWithResolverAndSessions(jobs state.ScheduledJobStore, store state.ScheduleManagementStore,
+	runs state.ScheduleRunStore, executionJobs state.JobLifecycleStore, deliveries state.DeliveryStore,
+	resolver envelopetarget.DestinationResolver, sessions RunSessionCloser) *Management {
+	m := NewManagementWithResolver(jobs, store, runs, executionJobs, deliveries, resolver)
+	m.sessions = sessions
+	return m
 }
 
 // RunNow admits one manual execution, including for a disabled schedule when confirmed.
@@ -331,6 +341,15 @@ func (m *Management) Create(ctx context.Context, request schedulecmd.Create) (sc
 		kind = state.ScheduleRecreate
 		expectedVersion = current.DefinitionVersion
 		record.LastRunAt = current.LastRunAt
+		if current.KeepSession {
+			cleaned, err := cleanupRetainedSession(ctx, record.JobID, m.executionJobs, m.sessions)
+			if err != nil {
+				return schedulecmd.Item{}, schedulecmd.ErrUnavailable
+			}
+			if !cleaned {
+				return schedulecmd.Item{}, schedulecmd.ErrConflict
+			}
+		}
 	}
 	record.DefinitionVersion = expectedVersion + 1
 	if err := m.store.Save(ctx, state.ScheduleMutation{Kind: kind, Record: record,
@@ -360,6 +379,11 @@ func (m *Management) Update(ctx context.Context, request schedulecmd.Update) (sc
 	record.Enabled = previous.Enabled
 	record.DefinitionVersion = previous.DefinitionVersion + 1
 	record.LastRunAt = previous.LastRunAt
+	if previous.KeepSession && !record.KeepSession {
+		if _, err := cleanupRetainedSession(ctx, record.JobID, m.executionJobs, m.sessions); err != nil {
+			return schedulecmd.Item{}, schedulecmd.ErrUnavailable
+		}
+	}
 	if err := m.store.Save(ctx, state.ScheduleMutation{Kind: state.ScheduleEdit, Record: record,
 		ExpectedVersion: request.ExpectedVersion, Authority: request.Authority,
 		Audit: scheduleAudit(record.JobID, request.Authority)}); err != nil {
@@ -404,12 +428,38 @@ func (m *Management) Delete(ctx context.Context, request schedulecmd.Delete) (sc
 	record.Enabled = false
 	record.Deleted = true
 	record.DefinitionVersion++
+	if record.KeepSession {
+		cleaned, err := cleanupRetainedSession(ctx, record.JobID, m.executionJobs, m.sessions)
+		if err != nil {
+			return schedulecmd.Item{}, schedulecmd.ErrUnavailable
+		}
+		record.KeepSession = !cleaned
+	}
 	if err := m.store.Save(ctx, state.ScheduleMutation{Kind: state.ScheduleDelete, Record: record,
 		ExpectedVersion: request.ExpectedVersion, Authority: request.Authority,
 		Audit: scheduleAudit(record.JobID, request.Authority)}); err != nil {
 		return schedulecmd.Item{}, err
 	}
 	return scheduleItem(record), nil
+}
+
+func cleanupRetainedSession(ctx context.Context, scheduleID string, jobs state.JobLifecycleStore,
+	sessions RunSessionCloser) (bool, error) {
+	if jobs == nil || sessions == nil {
+		return true, nil
+	}
+	sessionID := turncmd.PersistentScheduledExecutionSessionID(scheduleID)
+	active, err := jobs.ListActiveJobsBySession(ctx, sessionID)
+	if err != nil {
+		return false, err
+	}
+	if len(active) > 0 {
+		return false, nil
+	}
+	if err := sessions.CloseRunSession(ctx, sessionID, turncmd.ScheduledExecutionUserID(sessionID)); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 func (m *Management) getManaged(ctx context.Context, id string, version uint64) (state.ScheduledJobRecord, error) {
@@ -452,7 +502,7 @@ func (m *Management) build(definition schedulecmd.Definition) (state.ScheduledJo
 	}
 	r := state.ScheduledJobRecord{JobID: id,
 		Content: content, ScheduleSpec: cron, Timezone: "UTC", Status: state.ScheduledJobStatusActive,
-		MaxRetries: defaultSchedulerMaxRetries, NextRunAt: next}
+		MaxRetries: defaultSchedulerMaxRetries, NextRunAt: next, KeepSession: definition.KeepSession}
 	if definition.Alias != "" {
 		alias := strings.TrimSpace(definition.Alias)
 		if !validScheduleAliasName(alias) {
@@ -500,7 +550,7 @@ func scheduleItem(r state.ScheduledJobRecord) schedulecmd.Item {
 		locator = r.ReportToChannelType + ":" + r.ReportToAddressKey
 	}
 	d := schedulecmd.Definition{ID: r.JobID, Cron: r.ScheduleSpec, Content: r.Content,
-		Locator: locator, Alias: alias}
+		Locator: locator, Alias: alias, KeepSession: r.KeepSession}
 	return schedulecmd.Item{Definition: d, Source: r.Source, Enabled: r.Enabled, Deleted: r.Deleted,
 		Version: r.DefinitionVersion, Status: r.Status, NextRunAt: r.NextRunAt, LastRunAt: r.LastRunAt}
 }

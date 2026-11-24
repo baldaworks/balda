@@ -357,9 +357,10 @@ type SchedulerConfig struct {
 
 // ScheduledJobConfig defines a config-managed recurring job.
 type ScheduledJobConfig struct {
-	ID       string                     `mapstructure:"id"`
-	Cron     string                     `mapstructure:"cron"`
-	Envelope ScheduledJobEnvelopeConfig `mapstructure:"envelope"`
+	ID          string                     `mapstructure:"id"`
+	Cron        string                     `mapstructure:"cron"`
+	KeepSession bool                       `mapstructure:"keep_session"`
+	Envelope    ScheduledJobEnvelopeConfig `mapstructure:"envelope"`
 }
 
 // ScheduledJobEnvelopeConfig defines the job envelope produced by a schedule.

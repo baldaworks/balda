@@ -299,7 +299,7 @@ func TestResetSessionDeleteTimeoutKeepsSessionForRetry(t *testing.T) {
 		t.Fatalf("Create() error = %v", err)
 	}
 	event := adksession.NewEvent(ctx, "old-turn")
-	event.Author = "user"
+	event.Author = ensureTestAuthor
 	if err := service.AppendEvent(ctx, created.Session, event); err != nil {
 		t.Fatalf("AppendEvent() error = %v", err)
 	}
@@ -1281,6 +1281,16 @@ func TestEnsureTransientSessionDoesNotPersistAddressMetadata(t *testing.T) {
 	}, "balda"); err == nil {
 		t.Fatal("active private session accepted a different owner")
 	}
+	rebound, err := m.EnsureTransientSession(t.Context(), SessionContext{
+		Locator: first, UserID: "tg-101", Kind: KindSchedule, OwnerJobID: "scheduled-other",
+		AllowOwnerJobRebind: true,
+	}, "balda")
+	if err != nil {
+		t.Fatalf("retained schedule owner rebind: %v", err)
+	}
+	if got := rebound.GetOwnerJobID(); got != "scheduled-other" {
+		t.Fatalf("retained schedule owner = %q, want scheduled-other", got)
+	}
 	if len(store.upsertedRecords) != 0 {
 		t.Fatalf("private sessions persisted address metadata: %+v", store.upsertedRecords)
 	}
@@ -1335,23 +1345,63 @@ func TestEnsureTransientSessionReopensSQLiteRuntimeAfterRestart(t *testing.T) {
 	builder := &sqliteAgentBuilder{}
 	locator := testTelegramLocator(10, 42)
 	locator.SessionID = "sch-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	workingDir := t.TempDir()
+	workspaceDir := filepath.Join(t.TempDir(), locator.SessionID)
+	workspaces := &cleanupWorkspaceFixture{
+		root:         filepath.Dir(workspaceDir),
+		ensureResult: EnsureWorkspaceResult{Dir: workspaceDir, Created: false},
+	}
 	newManager := func() *Manager {
 		return &Manager{
 			baldaProviderName: "balda-provider", runtimeManager: runtimeManager, agentBuilder: builder,
-			workingDir: t.TempDir(), logger: zerolog.Nop(), sessions: make(map[string]*TopicSession),
+			workingDir: workingDir, workspaces: workspaces, workspaceEnabled: true,
+			logger: zerolog.Nop(), sessions: make(map[string]*TopicSession),
 			sessionStore: &fakeSessionStore{}, sessionsPersistent: true,
 		}
 	}
 
-	if _, err := newManager().EnsureTransientSession(t.Context(), SessionContext{
+	manager := newManager()
+	first, err := manager.EnsureTransientSession(t.Context(), SessionContext{
 		Locator: locator, UserID: "tg-101", Kind: KindSchedule, OwnerJobID: "scheduled-a",
-	}, "balda"); err != nil {
+	}, "balda")
+	if err != nil {
 		t.Fatalf("first EnsureTransientSession() error = %v", err)
 	}
-	if _, err := newManager().EnsureTransientSession(t.Context(), SessionContext{
-		Locator: locator, UserID: "tg-101", Kind: KindSchedule, OwnerJobID: "scheduled-a",
-	}, "balda"); err != nil {
+	if err := first.UpdateRuntimeState(t.Context(), map[string]any{"retained-context": "first-run"}); err != nil {
+		t.Fatalf("UpdateRuntimeState() error = %v", err)
+	}
+	event := adksession.NewEvent(t.Context(), "first-run")
+	event.Author = ensureTestAuthor
+	if err := service.AppendEvent(t.Context(), testRuntimeSession(first), event); err != nil {
+		t.Fatalf("AppendEvent() error = %v", err)
+	}
+	second, err := manager.EnsureTransientSession(t.Context(), SessionContext{
+		Locator: locator, UserID: "tg-101", Kind: KindSchedule, OwnerJobID: "scheduled-b",
+		AllowOwnerJobRebind: true,
+	}, "balda")
+	if err != nil {
+		t.Fatalf("rebound EnsureTransientSession() error = %v", err)
+	}
+	if second != first || second.GetWorkspaceDir() != workspaceDir || second.GetOwnerJobID() != "scheduled-b" {
+		t.Fatalf("rebound session = %p/%q/%q, want %p/%q/scheduled-b", second, second.GetWorkspaceDir(), second.GetOwnerJobID(), first, workspaceDir)
+	}
+	if value, found, err := second.RuntimeStateValue(t.Context(), "retained-context"); err != nil || !found || value != "first-run" {
+		t.Fatalf("rebound runtime state = %v, %t, %v", value, found, err)
+	}
+	restarted, err := newManager().EnsureTransientSession(t.Context(), SessionContext{
+		Locator: locator, UserID: "tg-101", Kind: KindSchedule, OwnerJobID: "scheduled-c",
+	}, "balda")
+	if err != nil {
 		t.Fatalf("restart EnsureTransientSession() error = %v", err)
+	}
+	if restarted.GetWorkspaceDir() != workspaceDir || restarted.GetAgentSessionID() != first.GetAgentSessionID() {
+		t.Fatalf("restarted identities = %q/%q, want %q/%q", restarted.GetWorkspaceDir(), restarted.GetAgentSessionID(), workspaceDir, first.GetAgentSessionID())
+	}
+	if value, found, err := restarted.RuntimeStateValue(t.Context(), "retained-context"); err != nil || !found || value != "first-run" {
+		t.Fatalf("restarted runtime state = %v, %t, %v", value, found, err)
+	}
+	if got := testRuntimeSession(restarted).Events().Len(); got != 1 {
+		t.Fatalf("restarted event history = %d, want 1", got)
 	}
 	if builder.legacyCalls != 2 || builder.freshCalls != 0 {
 		t.Fatalf("builder calls = legacy %d, fresh %d; want legacy 2, fresh 0", builder.legacyCalls, builder.freshCalls)
@@ -1382,7 +1432,7 @@ func TestCloseRunSessionDeletesPersistedEventsAfterRestart(t *testing.T) {
 			t.Fatal(err)
 		}
 		event := adksession.NewEvent(t.Context(), "run-turn")
-		event.Author = "user"
+		event.Author = ensureTestAuthor
 		if err := service.AppendEvent(t.Context(), created.Session, event); err != nil {
 			t.Fatal(err)
 		}

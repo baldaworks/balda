@@ -28,12 +28,15 @@ func TestPostgresRuntimeOperationStateMigration(t *testing.T) {
 		t.Fatal(err)
 	}
 	insertLegacyRuntimeSession(t, db, postgresBind)
+	if _, err := provider.UpTo(t.Context(), 37); err != nil {
+		t.Fatal(err)
+	}
+	checkRuntimeOperationStateMigration(t, db, postgresBind)
+	checkRequestedModelDowngradeProhibited(t, db, postgresBind, provider)
 	if _, err := provider.Up(t.Context()); err != nil {
 		t.Fatal(err)
 	}
 	assertPostgresRuntimeOperationSchema(t, db)
-	checkRuntimeOperationStateMigration(t, db, postgresBind)
-	checkRequestedModelDowngradeProhibited(t, db, postgresBind, provider)
 }
 
 func assertPostgresRuntimeOperationSchema(t *testing.T, db *sql.DB) {

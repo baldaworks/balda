@@ -92,10 +92,10 @@ func (s *sqliteScheduledJobStore) Upsert(ctx context.Context, record ScheduledJo
 			report_to_enabled, report_to_session_id, report_to_channel_type, report_to_address_key, report_to_address_json,
 			content, schedule_spec, timezone, status,
 			max_retries, retry_count, last_dispatch_key, next_run_at, last_run_at, last_error, created_at, updated_at,
-			source, enabled, deleted, definition_version, target_kind, target_key,
+			source, enabled, deleted, keep_session, definition_version, target_kind, target_key,
 			report_to_target_kind, report_to_target_key
 		)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(job_id) DO UPDATE SET
 			session_id = excluded.session_id,
 			channel_type = excluded.channel_type,
@@ -120,6 +120,7 @@ func (s *sqliteScheduledJobStore) Upsert(ctx context.Context, record ScheduledJo
 			source = excluded.source,
 			enabled = excluded.enabled,
 			deleted = excluded.deleted,
+			keep_session = excluded.keep_session,
 			definition_version = excluded.definition_version,
 			target_kind = excluded.target_kind,
 			target_key = excluded.target_key,
@@ -157,6 +158,7 @@ func (s *sqliteScheduledJobStore) Upsert(ctx context.Context, record ScheduledJo
 		source,
 		enabled,
 		record.Deleted,
+		record.KeepSession,
 		definitionVersion,
 		strings.TrimSpace(record.TargetKind),
 		strings.TrimSpace(record.TargetKey),
@@ -183,7 +185,7 @@ func (s *sqliteScheduledJobStore) GetByID(ctx context.Context, jobID string) (Sc
 		       report_to_enabled, report_to_session_id, report_to_channel_type, report_to_address_key, report_to_address_json,
 		       content, schedule_spec, timezone, status,
 		       max_retries, retry_count, last_dispatch_key, next_run_at, last_run_at, last_error, created_at, updated_at,
-			source, enabled, deleted, definition_version, target_kind, target_key,
+			source, enabled, deleted, keep_session, definition_version, target_kind, target_key,
 			report_to_target_kind, report_to_target_key
 		FROM balda_scheduled_jobs
 		WHERE job_id = ?`,
@@ -203,7 +205,7 @@ func (s *sqliteScheduledJobStore) List(ctx context.Context) ([]ScheduledJobRecor
 		       report_to_enabled, report_to_session_id, report_to_channel_type, report_to_address_key, report_to_address_json,
 		       content, schedule_spec, timezone, status,
 		       max_retries, retry_count, last_dispatch_key, next_run_at, last_run_at, last_error, created_at, updated_at,
-			source, enabled, deleted, definition_version, target_kind, target_key,
+			source, enabled, deleted, keep_session, definition_version, target_kind, target_key,
 			report_to_target_kind, report_to_target_key
 		FROM balda_scheduled_jobs
 		ORDER BY job_id ASC`)
@@ -225,7 +227,7 @@ func (s *sqliteScheduledJobStore) ListByAddress(
 		       report_to_enabled, report_to_session_id, report_to_channel_type, report_to_address_key, report_to_address_json,
 		       content, schedule_spec, timezone, status,
 		       max_retries, retry_count, last_dispatch_key, next_run_at, last_run_at, last_error, created_at, updated_at,
-			source, enabled, deleted, definition_version, target_kind, target_key,
+			source, enabled, deleted, keep_session, definition_version, target_kind, target_key,
 			report_to_target_kind, report_to_target_key
 		FROM balda_scheduled_jobs
 		WHERE channel_type = ? AND address_key = ?
@@ -250,7 +252,7 @@ func (s *sqliteScheduledJobStore) ListDue(ctx context.Context, now time.Time, li
 		       report_to_enabled, report_to_session_id, report_to_channel_type, report_to_address_key, report_to_address_json,
 		       content, schedule_spec, timezone, status,
 		       max_retries, retry_count, last_dispatch_key, next_run_at, last_run_at, last_error, created_at, updated_at,
-			source, enabled, deleted, definition_version, target_kind, target_key,
+			source, enabled, deleted, keep_session, definition_version, target_kind, target_key,
 			report_to_target_kind, report_to_target_key
 		FROM balda_scheduled_jobs
 		WHERE status = ? AND enabled = 1 AND deleted = 0 AND next_run_at <= ?
@@ -336,6 +338,7 @@ func scanScheduledJob(scan func(dest ...any) error) (ScheduledJobRecord, bool, e
 		&record.Source,
 		&record.Enabled,
 		&record.Deleted,
+		&record.KeepSession,
 		&record.DefinitionVersion,
 		&record.TargetKind,
 		&record.TargetKey,

@@ -425,6 +425,7 @@ type ScheduledJobRecord struct {
 	Source              string
 	Enabled             bool
 	Deleted             bool
+	KeepSession         bool
 	DefinitionVersion   uint64
 	TargetKind          string
 	TargetKey           string

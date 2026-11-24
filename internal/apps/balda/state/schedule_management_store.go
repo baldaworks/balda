@@ -310,9 +310,9 @@ func (s *sqlScheduleManagementStore) insert(ctx context.Context, tx *sql.Tx, r S
 		report_to_enabled, report_to_session_id, report_to_channel_type, report_to_address_key, report_to_address_json,
 		content, schedule_spec, timezone, status, max_retries, retry_count,
 		last_dispatch_key, next_run_at, last_run_at, last_error, created_at, updated_at,
-		source, enabled, deleted, definition_version, target_kind, target_key,
+		source, enabled, deleted, keep_session, definition_version, target_kind, target_key,
 		report_to_target_kind, report_to_target_key)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(job_id) DO NOTHING`),
 		r.JobID, r.SessionID, r.ChannelType, r.AddressKey, r.AddressJSON,
 		boolInt(r.ReportToEnabled), r.ReportToSessionID, r.ReportToChannelType,
@@ -320,7 +320,7 @@ func (s *sqlScheduleManagementStore) insert(ctx context.Context, tx *sql.Tx, r S
 		"UTC", ScheduledJobStatusActive, r.MaxRetries, 0, "",
 		r.NextRunAt.UTC().Format(time.RFC3339), "", "",
 		now.Format(time.RFC3339), now.Format(time.RFC3339),
-		ScheduledJobSourceManaged, 1, 0, r.DefinitionVersion,
+		ScheduledJobSourceManaged, 1, 0, boolInt(r.KeepSession), r.DefinitionVersion,
 		r.TargetKind, r.TargetKey, r.ReportToTargetKind, r.ReportToTargetKey)
 	if err != nil {
 		return schedulecmd.ErrUnavailable
@@ -345,21 +345,21 @@ func (s *sqlScheduleManagementStore) update(ctx context.Context, tx *sql.Tx, m S
 			session_id=?, channel_type=?, address_key=?, address_json=?,
 			report_to_enabled=?, report_to_session_id=?, report_to_channel_type=?, report_to_address_key=?, report_to_address_json=?,
 			content=?, schedule_spec=?, timezone=?, max_retries=?, target_kind=?, target_key=?,
-			report_to_target_kind=?, report_to_target_key=?, enabled=1, deleted=0,
+			report_to_target_kind=?, report_to_target_key=?, keep_session=?, enabled=1, deleted=0,
 			status=?, retry_count=0, last_dispatch_key='', next_run_at=?, last_error='', definition_version=?, updated_at=?`
 		args = []any{r.SessionID, r.ChannelType, r.AddressKey, r.AddressJSON,
 			boolInt(r.ReportToEnabled), r.ReportToSessionID, r.ReportToChannelType, r.ReportToAddressKey, r.ReportToAddressJSON,
 			r.Content, r.ScheduleSpec, r.Timezone, r.MaxRetries, r.TargetKind, r.TargetKey,
-			r.ReportToTargetKind, r.ReportToTargetKey, ScheduledJobStatusActive,
+			r.ReportToTargetKind, r.ReportToTargetKey, boolInt(r.KeepSession), ScheduledJobStatusActive,
 			r.NextRunAt.UTC().Format(time.RFC3339), r.DefinitionVersion, time.Now().UTC().Format(time.RFC3339Nano)}
 	case ScheduleEdit:
 		query = `UPDATE balda_scheduled_jobs SET session_id=?, channel_type=?, address_key=?, address_json=?,
 			report_to_enabled=?, report_to_session_id=?, report_to_channel_type=?, report_to_address_key=?, report_to_address_json=?,
-			content=?, schedule_spec=?, target_kind=?, target_key=?, report_to_target_kind=?, report_to_target_key=?,
+			content=?, schedule_spec=?, target_kind=?, target_key=?, report_to_target_kind=?, report_to_target_key=?, keep_session=?,
 			status=?, retry_count=0, last_dispatch_key='', next_run_at=?, last_error='', definition_version=?, updated_at=?`
 		args = []any{r.SessionID, r.ChannelType, r.AddressKey, r.AddressJSON,
 			boolInt(r.ReportToEnabled), r.ReportToSessionID, r.ReportToChannelType, r.ReportToAddressKey, r.ReportToAddressJSON,
-			r.Content, r.ScheduleSpec, r.TargetKind, r.TargetKey, r.ReportToTargetKind, r.ReportToTargetKey,
+			r.Content, r.ScheduleSpec, r.TargetKind, r.TargetKey, r.ReportToTargetKind, r.ReportToTargetKey, boolInt(r.KeepSession),
 			ScheduledJobStatusActive, r.NextRunAt.UTC().Format(time.RFC3339), r.DefinitionVersion, time.Now().UTC().Format(time.RFC3339Nano)}
 	case ScheduleSelection:
 		if r.Enabled {

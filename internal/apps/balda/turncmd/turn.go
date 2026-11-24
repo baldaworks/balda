@@ -36,32 +36,33 @@ var ErrWebhookReportQueued = errors.New("webhook report queued")
 
 type SessionTurnPayload struct {
 	// ArchiveID freezes the runtime lifetime at human admission.
-	ArchiveID        string                            `json:"archive_id,omitempty"`
-	Activation       *sessioncmd.Activation            `json:"activation,omitempty"`
-	JobID            string                            `json:"job_id,omitempty"`
-	Text             string                            `json:"text"`
-	Attachments      []attachment.Descriptor           `json:"attachments,omitempty"`
-	Locator          deliverycmd.Locator               `json:"locator"`
-	ReportTo         *deliverycmd.Locator              `json:"report_to,omitempty"`
-	ParentJobID      string                            `json:"parent_job_id,omitempty"`
-	UserID           string                            `json:"user_id,omitempty"`           // Creation seed; selected session owns runtime identity.
-	RequesterUserID  string                            `json:"requester_user_id,omitempty"` // Actual caller for attribution and approvals.
-	AgentSessionID   string                            `json:"agent_session_id,omitempty"`  // Producer context; selected session owns provider lookup.
-	ScheduledJobID   string                            `json:"scheduled_job_id,omitempty"`
-	ScheduleOneShot  *bool                             `json:"schedule_one_shot,omitempty"`
-	MessageID        int                               `json:"message_id,omitempty"`
-	ReplyToMessageID int                               `json:"reply_to_message_id,omitempty"`
-	ReceivedAt       string                            `json:"received_at,omitempty"`
-	SteeringMessages []SteeringMessage                 `json:"steering_messages,omitempty"`
-	TopicID          int                               `json:"topic_id,omitempty"`
-	DeliveryFormat   deliveryfmt.DeliveryFormat        `json:"delivery_format,omitempty"`
-	ProgressPolicy   deliveryfmt.ProgressPolicy        `json:"progress_policy,omitempty"`
-	Deliver          bool                              `json:"deliver"`
-	Source           string                            `json:"source,omitempty"`
-	DedupeKey        string                            `json:"dedupe_key,omitempty"`
-	QuestionID       string                            `json:"question_id,omitempty"`
-	Metadata         *SessionTurnMetadata              `json:"metadata,omitempty,omitzero"`
-	Skill            *runtimecatalogcmd.SkillSelection `json:"skill,omitempty"`
+	ArchiveID           string                            `json:"archive_id,omitempty"`
+	Activation          *sessioncmd.Activation            `json:"activation,omitempty"`
+	JobID               string                            `json:"job_id,omitempty"`
+	Text                string                            `json:"text"`
+	Attachments         []attachment.Descriptor           `json:"attachments,omitempty"`
+	Locator             deliverycmd.Locator               `json:"locator"`
+	ReportTo            *deliverycmd.Locator              `json:"report_to,omitempty"`
+	ParentJobID         string                            `json:"parent_job_id,omitempty"`
+	UserID              string                            `json:"user_id,omitempty"`           // Creation seed; selected session owns runtime identity.
+	RequesterUserID     string                            `json:"requester_user_id,omitempty"` // Actual caller for attribution and approvals.
+	AgentSessionID      string                            `json:"agent_session_id,omitempty"`  // Producer context; selected session owns provider lookup.
+	ScheduledJobID      string                            `json:"scheduled_job_id,omitempty"`
+	ScheduleOneShot     *bool                             `json:"schedule_one_shot,omitempty"`
+	ScheduleKeepSession bool                              `json:"schedule_keep_session,omitempty"`
+	MessageID           int                               `json:"message_id,omitempty"`
+	ReplyToMessageID    int                               `json:"reply_to_message_id,omitempty"`
+	ReceivedAt          string                            `json:"received_at,omitempty"`
+	SteeringMessages    []SteeringMessage                 `json:"steering_messages,omitempty"`
+	TopicID             int                               `json:"topic_id,omitempty"`
+	DeliveryFormat      deliveryfmt.DeliveryFormat        `json:"delivery_format,omitempty"`
+	ProgressPolicy      deliveryfmt.ProgressPolicy        `json:"progress_policy,omitempty"`
+	Deliver             bool                              `json:"deliver"`
+	Source              string                            `json:"source,omitempty"`
+	DedupeKey           string                            `json:"dedupe_key,omitempty"`
+	QuestionID          string                            `json:"question_id,omitempty"`
+	Metadata            *SessionTurnMetadata              `json:"metadata,omitempty,omitzero"`
+	Skill               *runtimecatalogcmd.SkillSelection `json:"skill,omitempty"`
 }
 
 // SessionTurnMetadata carries application-owned cursors through durable turn delivery.
@@ -170,6 +171,7 @@ type scheduledJobPayload struct {
 	UserID      string               `json:"user_id"`
 	TopicID     int                  `json:"topic_id,omitempty"`
 	OneShot     *bool                `json:"one_shot,omitempty"`
+	KeepSession bool                 `json:"keep_session,omitempty"`
 }
 
 const (
@@ -295,27 +297,41 @@ func ScheduledJobEnvelope(
 	topicID int,
 	dispatchKey string,
 ) (actorlayer.Envelope, error) {
-	return scheduledJobEnvelope(scheduledJobID, content, locator, reportTo, userID, topicID, dispatchKey, false)
+	return scheduledJobEnvelope(scheduledJobID, content, locator, reportTo, userID, topicID, dispatchKey, false, false)
+}
+
+// PersistentScheduledJobEnvelope keeps one private execution session for all runs of a schedule.
+func PersistentScheduledJobEnvelope(
+	scheduledJobID string,
+	content string,
+	locator deliverycmd.Locator,
+	reportTo *deliverycmd.Locator,
+	userID string,
+	topicID int,
+	dispatchKey string,
+) (actorlayer.Envelope, error) {
+	return scheduledJobEnvelope(scheduledJobID, content, locator, reportTo, userID, topicID, dispatchKey, false, true)
 }
 
 // InternalOneShotEnvelope preserves the existing ordinary-session timer behavior.
 func InternalOneShotEnvelope(scheduledJobID, content string, locator deliverycmd.Locator,
 	reportTo *deliverycmd.Locator, userID string, topicID int, dispatchKey string) (actorlayer.Envelope, error) {
-	return scheduledJobEnvelope(scheduledJobID, content, locator, reportTo, userID, topicID, dispatchKey, true)
+	return scheduledJobEnvelope(scheduledJobID, content, locator, reportTo, userID, topicID, dispatchKey, true, false)
 }
 
 func scheduledJobEnvelope(scheduledJobID, content string, locator deliverycmd.Locator,
-	reportTo *deliverycmd.Locator, userID string, topicID int, dispatchKey string, oneShot bool) (actorlayer.Envelope, error) {
+	reportTo *deliverycmd.Locator, userID string, topicID int, dispatchKey string, oneShot, keepSession bool) (actorlayer.Envelope, error) {
 	payload := jobEnvelopePayload{
 		Kind: jobPayloadKindScheduledJob,
 		ScheduledJob: &scheduledJobPayload{
-			JobID:    strings.TrimSpace(scheduledJobID),
-			Content:  content,
-			Locator:  locator,
-			ReportTo: reportTo,
-			UserID:   strings.TrimSpace(userID),
-			TopicID:  topicID,
-			OneShot:  &oneShot,
+			JobID:       strings.TrimSpace(scheduledJobID),
+			Content:     content,
+			Locator:     locator,
+			ReportTo:    reportTo,
+			UserID:      strings.TrimSpace(userID),
+			TopicID:     topicID,
+			OneShot:     &oneShot,
+			KeepSession: keepSession,
 		},
 	}
 	data, err := actorlayer.MarshalPayload(payload)
@@ -324,6 +340,9 @@ func scheduledJobEnvelope(scheduledJobID, content string, locator deliverycmd.Lo
 	}
 	jobID := "scheduled-" + strings.TrimSpace(scheduledJobID) + "-" + strings.TrimSpace(dispatchKey)
 	executionSessionID := ScheduledExecutionSessionID(jobID)
+	if keepSession {
+		executionSessionID = PersistentScheduledExecutionSessionID(scheduledJobID)
+	}
 	if oneShot {
 		executionSessionID = locator.SessionID
 	}
@@ -343,6 +362,16 @@ func scheduledJobEnvelope(scheduledJobID, content string, locator deliverycmd.Lo
 func ScheduledExecutionSessionID(jobID string) string {
 	sum := sha256.Sum256([]byte(strings.TrimSpace(jobID)))
 	return fmt.Sprintf("sch-%x", sum[:16])
+}
+
+// PersistentScheduledExecutionSessionID identifies the retained private session for one schedule.
+func PersistentScheduledExecutionSessionID(scheduledJobID string) string {
+	return ScheduledExecutionSessionID("schedule:" + strings.TrimSpace(scheduledJobID))
+}
+
+// ScheduledExecutionUserID returns the private runtime user bound to a schedule session.
+func ScheduledExecutionUserID(sessionID string) string {
+	return "schedule-" + strings.TrimSpace(sessionID)
 }
 
 // IsPrivateRun identifies an isolated schedule or webhook execution session.
@@ -383,6 +412,9 @@ func PrivateScheduledTurn(payload SessionTurnPayload) (SessionTurnPayload, error
 		report = &canonical
 	}
 	sessionID := ScheduledExecutionSessionID(payload.JobID)
+	if payload.ScheduleKeepSession {
+		sessionID = PersistentScheduledExecutionSessionID(payload.ScheduledJobID)
+	}
 	private, err := deliverycmd.NewLocator(SourceSchedule, sessionID,
 		fmt.Sprintf(`{"run_id":%q}`, sessionID), sessionID)
 	if err != nil {
@@ -392,7 +424,7 @@ func PrivateScheduledTurn(payload SessionTurnPayload) (SessionTurnPayload, error
 	payload.ReportTo = report
 	payload.Deliver = report != nil
 	if strings.TrimSpace(payload.UserID) == "" {
-		payload.UserID = "schedule-" + private.SessionID
+		payload.UserID = ScheduledExecutionUserID(private.SessionID)
 	}
 	return payload, nil
 }

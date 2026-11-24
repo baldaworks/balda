@@ -73,7 +73,7 @@ var rationalizationScopes = []rationalizationScope{
 	{path: "internal/apps/balda/scheduledjobs/management_test.go", groups: map[string][]string{
 		"service-concurrency": {"TestManagementManualRunIsIdempotentAndHistoryIsSafe", "TestManagedScheduleManualRunFreezesAliasAndDuplicateSelection"},
 		"service-failure":     {"TestManualRunWithMissingAliasRecordsFailureWithoutChangingCron", "TestManagementRejectsInvalidDefinitionAndConfigMutation", "TestManagementValidatesSuppliedPublicReportLocator"},
-		"service-lifecycle":   {"TestManagementProjectsPrepublicationCompletionTime", "TestManagementRunProjectionShowsFrozenReportLocator", "TestManagementLifecyclePreservesDisabledSelectionAndArchive", "TestManagementCreatesScheduleWithoutReportLocator"},
+		"service-lifecycle":   {"TestManagementProjectsPrepublicationCompletionTime", "TestManagementRunProjectionShowsFrozenReportLocator", "TestManagementLifecyclePreservesDisabledSelectionAndArchive", "TestManagementCreatesScheduleWithoutReportLocator", "TestManagementClearsIdleRetainedSessionWhenFlagIsRemoved", "TestManagementRetainsCleanupIntentWhenIdleCleanupFails"},
 	}},
 	{path: "internal/apps/balda/webhookbackofficeapp/operations_test.go", groups: map[string][]string{
 		"adapter-boundary":        {"TestPostUsesCurrentRouteAndFormKey"},
@@ -147,7 +147,7 @@ func TestLifecycleRationalizationInventoryIsComplete(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	const wantScopedTests = 83
+	const wantScopedTests = 85
 	classified := 0
 	for _, scope := range rationalizationScopes {
 		expected := make(map[string]string)
@@ -188,7 +188,7 @@ func TestLifecycleRationalizationInventoryIsComplete(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read exact rationalization inventory: %v\nresolved inventory:\n%s", err, inventory)
 	}
-	const wantFocusedTests = 441
+	const wantFocusedTests = 447
 	if err := compareRationalizationInventory(snapshot, inventory, wantFocusedTests); err != nil {
 		t.Fatal(err)
 	}

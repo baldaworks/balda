@@ -68,6 +68,7 @@ type SessionContext struct {
 	UserID                     string
 	Kind                       Kind
 	OwnerJobID                 string
+	AllowOwnerJobRebind        bool
 	AllowBaldaProviderFallback bool
 }
 

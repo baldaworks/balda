@@ -264,12 +264,13 @@ func Module(
 			}
 		}
 		scheduledJobSchedulerConfig.Jobs = append(scheduledJobSchedulerConfig.Jobs, scheduledjobs.ConfiguredScheduledJob{
-			ID:       strings.TrimSpace(task.ID),
-			Cron:     strings.TrimSpace(task.Cron),
-			Target:   strings.TrimSpace(task.Envelope.Target),
-			Key:      strings.TrimSpace(task.Envelope.Key),
-			Content:  strings.TrimSpace(task.Envelope.Content),
-			ReportTo: reportTo,
+			ID:          strings.TrimSpace(task.ID),
+			Cron:        strings.TrimSpace(task.Cron),
+			Target:      strings.TrimSpace(task.Envelope.Target),
+			Key:         strings.TrimSpace(task.Envelope.Key),
+			Content:     strings.TrimSpace(task.Envelope.Content),
+			KeepSession: task.KeepSession,
+			ReportTo:    reportTo,
 		})
 	}
 	if err := validateWebhookRawConfig(cfg.Balda.Webhooks); err != nil {

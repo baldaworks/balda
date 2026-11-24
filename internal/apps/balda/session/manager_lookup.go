@@ -74,8 +74,18 @@ func (m *Manager) EnsureTransientSession(ctx context.Context, sessionCtx Session
 		return nil, err
 	}
 	sessionCtx = resolvedCtx
-	if existing, err := m.GetSession(sessionCtx.Locator); err == nil {
-		if existing.kind != sessionCtx.Kind || existing.ownerJobID != sessionCtx.OwnerJobID {
+	m.mu.Lock()
+	existing := m.sessions[sessionID]
+	if existing != nil && existing.kind == sessionCtx.Kind &&
+		existing.ownerJobID != sessionCtx.OwnerJobID && sessionCtx.AllowOwnerJobRebind &&
+		sessionCtx.Kind == KindSchedule {
+		existing.ownerJobID = sessionCtx.OwnerJobID
+	}
+	contextMatches := existing == nil ||
+		existing.kind == sessionCtx.Kind && existing.ownerJobID == sessionCtx.OwnerJobID
+	m.mu.Unlock()
+	if existing != nil {
+		if !contextMatches {
 			return nil, fmt.Errorf("active session execution context does not match requested kind and owner")
 		}
 		return existing, nil

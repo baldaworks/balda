@@ -67,10 +67,11 @@ type SessionLocator struct {
 }
 
 type SessionContext struct {
-	Locator    SessionLocator
-	UserID     string
-	Kind       string
-	OwnerJobID string
+	Locator             SessionLocator
+	UserID              string
+	Kind                string
+	OwnerJobID          string
+	AllowOwnerJobRebind bool
 }
 
 type ActiveSession interface {
@@ -213,6 +214,7 @@ func (r *Runner) RunSessionTurnPayload(ctx context.Context, payload turncmd.Sess
 			}
 			topicSession, err = r.sessions.EnsureTransientSession(ctx, SessionContext{
 				Locator: locator, UserID: userID, Kind: payload.Source, OwnerJobID: payload.JobID,
+				AllowOwnerJobRebind: payload.Source == turncmd.SourceSchedule && payload.ScheduleKeepSession,
 			}, ownerSessionLabel)
 			if err != nil {
 				return fmt.Errorf("create private execution session: %w", err)

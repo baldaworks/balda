@@ -10,6 +10,7 @@ import (
 	baldatelegram "github.com/baldaworks/balda/internal/apps/balda/channel/telegram"
 	"github.com/baldaworks/balda/internal/apps/balda/schedulecmd"
 	"github.com/baldaworks/balda/internal/apps/balda/state"
+	"github.com/baldaworks/balda/internal/apps/balda/turncmd"
 )
 
 const (
@@ -313,7 +314,7 @@ func TestManagementCreatesScheduleWithoutReportLocator(t *testing.T) {
 	m := NewManagement(jobs, &recordingScheduleManagementStore{jobs: jobs}, nil, nil, nil)
 	authority := schedulecmd.Authority{At: time.Now().UTC()}
 	item, err := m.Create(t.Context(), schedulecmd.Create{Definition: schedulecmd.Definition{
-		ID: "local-only", Cron: "0 9 * * *", Content: "review local state",
+		ID: "local-only", Cron: "0 9 * * *", Content: "review local state", KeepSession: true,
 	}, Authority: authority})
 	if err != nil {
 		t.Fatalf("Create() error = %v", err)
@@ -322,8 +323,115 @@ func TestManagementCreatesScheduleWithoutReportLocator(t *testing.T) {
 		t.Fatalf("locator = %q, want omitted", item.Definition.Locator)
 	}
 	stored, found, err := jobs.GetByID(t.Context(), "local-only")
-	if err != nil || !found || stored.ReportToEnabled {
+	if err != nil || !found || stored.ReportToEnabled || !stored.KeepSession {
 		t.Fatalf("stored schedule = %+v, found=%v, err=%v", stored, found, err)
+	}
+}
+
+func TestManagementClearsIdleRetainedSessionWhenFlagIsRemoved(t *testing.T) {
+	provider, err := state.NewSQLiteProvider(t.Context(), filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = provider.Close() })
+	store := &recordingScheduleManagementStore{jobs: provider.ScheduledJobs()}
+	closer := &recordingRunCloser{}
+	m := NewManagementWithResolverAndSessions(provider.ScheduledJobs(), store, nil, provider.Jobs(),
+		provider.Jobs(), nil, closer)
+	created, err := m.Create(t.Context(), schedulecmd.Create{Definition: schedulecmd.Definition{
+		ID: "daily", Cron: "0 9 * * *", Content: "review", KeepSession: true,
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	definition := created.Definition
+	definition.KeepSession = false
+	if _, err := m.Update(t.Context(), schedulecmd.Update{
+		ID: "daily", ExpectedVersion: created.Version, Definition: definition,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	sessionID := turncmd.PersistentScheduledExecutionSessionID("daily")
+	want := sessionID + ":" + turncmd.ScheduledExecutionUserID(sessionID)
+	if len(closer.calls) != 1 || closer.calls[0] != want {
+		t.Fatalf("retained cleanup calls = %v, want %q", closer.calls, want)
+	}
+	tombstone := state.ScheduledJobRecord{JobID: "recreated", Source: state.ScheduledJobSourceManaged,
+		KeepSession: true, Deleted: true, DefinitionVersion: 1, Content: "old",
+		ScheduleSpec: "0 8 * * *", Status: state.ScheduledJobStatusActive, NextRunAt: time.Now().UTC().Add(time.Hour)}
+	if err := provider.ScheduledJobs().Upsert(t.Context(), tombstone); err != nil {
+		t.Fatal(err)
+	}
+	retainedID := turncmd.PersistentScheduledExecutionSessionID(tombstone.JobID)
+	if _, err := provider.Jobs().CreateJob(t.Context(), state.JobRecord{
+		ID: "active-recreated", SessionID: retainedID, Objective: "old run", Status: state.JobStatusRunning,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	_, err = m.Create(t.Context(), schedulecmd.Create{Definition: schedulecmd.Definition{
+		ID: tombstone.JobID, Cron: "0 10 * * *", Content: "new", KeepSession: true,
+	}})
+	if !errors.Is(err, schedulecmd.ErrConflict) {
+		t.Fatalf("recreate with active retained run = %v, want conflict", err)
+	}
+}
+
+func TestManagementRetainsCleanupIntentWhenIdleCleanupFails(t *testing.T) {
+	for _, testCase := range []struct {
+		name   string
+		mutate func(*Management, schedulecmd.Item) error
+	}{
+		{
+			name: "clear keep session",
+			mutate: func(m *Management, current schedulecmd.Item) error {
+				definition := current.Definition
+				definition.KeepSession = false
+				_, err := m.Update(t.Context(), schedulecmd.Update{
+					ID: current.Definition.ID, ExpectedVersion: current.Version, Definition: definition,
+				})
+				return err
+			},
+		},
+		{
+			name: "delete schedule",
+			mutate: func(m *Management, current schedulecmd.Item) error {
+				_, err := m.Delete(t.Context(), schedulecmd.Delete{
+					ID: current.Definition.ID, ExpectedVersion: current.Version,
+				})
+				return err
+			},
+		},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			provider, err := state.NewSQLiteProvider(t.Context(), filepath.Join(t.TempDir(), "state.db"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = provider.Close() })
+			closer := &flakyRunCloser{failOnce: true}
+			m := NewManagementWithResolverAndSessions(provider.ScheduledJobs(),
+				&recordingScheduleManagementStore{jobs: provider.ScheduledJobs()}, nil,
+				provider.Jobs(), provider.Jobs(), nil, closer)
+			created, err := m.Create(t.Context(), schedulecmd.Create{Definition: schedulecmd.Definition{
+				ID: "daily", Cron: "0 9 * * *", Content: "review", KeepSession: true,
+			}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := testCase.mutate(m, created); !errors.Is(err, schedulecmd.ErrUnavailable) {
+				t.Fatalf("first mutation error = %v, want unavailable", err)
+			}
+			stored, found, err := provider.ScheduledJobs().GetByID(t.Context(), "daily")
+			if err != nil || !found {
+				t.Fatalf("load retained definition: found=%t err=%v", found, err)
+			}
+			if !stored.KeepSession || stored.Deleted || stored.DefinitionVersion != created.Version {
+				t.Fatalf("definition changed after failed cleanup: %+v", stored)
+			}
+			if err := testCase.mutate(m, created); err != nil {
+				t.Fatalf("retry mutation: %v", err)
+			}
+		})
 	}
 }
 

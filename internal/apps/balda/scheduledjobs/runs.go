@@ -166,7 +166,11 @@ func (s *ScheduledJobScheduler) processRun(ctx context.Context, run state.Schedu
 		}
 		reportTo = &locator
 	}
-	env, err := turncmd.ScheduledJobEnvelope(job.JobID, strings.TrimSpace(job.Content),
+	buildEnvelope := turncmd.ScheduledJobEnvelope
+	if job.KeepSession {
+		buildEnvelope = turncmd.PersistentScheduledJobEnvelope
+	}
+	env, err := buildEnvelope(job.JobID, strings.TrimSpace(job.Content),
 		target.Locator, reportTo, target.UserID(), 0, run.TriggerKey)
 	if err != nil {
 		return s.failRun(ctx, run, now, "invalid_snapshot", false)
