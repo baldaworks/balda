@@ -42,6 +42,11 @@ var hooksQAEntries = []qaEntry{
 		p.Hooks.Editor = webui.ProjectHookEditor(hookcmd.Definition{Event: hookcmd.UserPromptSubmit, TimeoutSeconds: 10}, 3, true)
 		return p
 	}, gallery: true},
+	{name: "hooks/session-note", templateName: webui.TemplateHooks, page: func() webui.Page {
+		p := qaHooks()
+		p.Hooks.Editor = webui.ProjectHookEditor(qaSessionNote(), 3, false)
+		return p
+	}},
 	{name: "hooks/guard", label: "Agent hooks · edit", templateName: webui.TemplateHooks, page: qaHookEditor, gallery: true},
 	{name: "hooks-invalid", label: "Agent hooks · validation", templateName: webui.TemplateHooks, status: http.StatusBadRequest, page: func() webui.Page {
 		p := qaHookEditor()
@@ -61,13 +66,17 @@ var hooksQAEntries = []qaEntry{
 	}, gallery: true},
 }
 
+func qaSessionNote() hookcmd.Definition {
+	return hookcmd.Definition{Name: "session-note", Event: hookcmd.SessionEnd, Command: "/usr/bin/true", TimeoutSeconds: 2}
+}
+
 func qaHooks() webui.Page {
 	page := qaOverview()
 	page.Title, page.Current = "Agent hooks · Balda", webui.LocationHooks
 	page.Navigation = webui.Navigation(users.BackofficeCapabilities(usercmd.User{Role: usercmd.RoleAdministrator, Status: usercmd.StatusActive}), page.Current)
 	page.Hooks = webui.ProjectHooks(hookcmd.Record{Version: 3, Definitions: []hookcmd.Definition{
 		{Name: "guard", Event: hookcmd.UserPromptSubmit, Enabled: true, Command: "/usr/bin/python3", Args: []string{"/synthetic/hooks/guard.py"}, TimeoutSeconds: 10},
-		{Name: "session-note", Event: hookcmd.SessionEnd, Command: "/usr/bin/true", TimeoutSeconds: 2},
+		qaSessionNote(),
 	}})
 	page.Hooks.Capabilities = "Native PreToolUse and PostToolUse adapters are configured for provider qa-provider. Activation requires a new session: use /reset for an existing session. In-flight tool calls are unaffected. Native engine deadlines still apply; Claude's outer timer is about 24.8 days. Unsupported native versions fail explicitly."
 	return page

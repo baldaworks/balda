@@ -12,7 +12,7 @@ From the repository root, run:
 go run ./cmd/balda backoffice qa serve --listen 127.0.0.1:8096
 ```
 
-Open `http://127.0.0.1:8096/qa/ui/`. Review the shared foundation first: `/qa/ui/style-guide` covers all nine
+Open `http://127.0.0.1:8096/qa/ui/`. Review the shared foundation first: `/qa/ui/style-guide` covers the shared
 component groups, `/qa/ui/layout` shows the complete shell, and
 `/qa/ui/layout-long` exercises long names, navigation labels and content.
 The gallery links to the login, session

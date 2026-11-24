@@ -43,6 +43,13 @@ func qaPluginMarketplaceFailure(err error, add bool) webui.Page {
 }
 
 var pluginMarketplaceQAEntries = []qaEntry{
+	{name: "plugins/marketplaces/definitions/team", templateName: webui.TemplatePlugins, page: func() webui.Page {
+		p := qaPluginMarketplaces()
+		item := qaPluginMarketplace()
+		item.Name = "team"
+		p.Plugins.MarketplaceDetail = webui.ProjectPluginMarketplaceDetail(item, []plugincmd.InstalledView{{PluginStatus: plugincmd.PluginStatus{Name: "installed-demo"}}})
+		return p
+	}},
 	{name: "plugins", label: "Plugins · Installed", templateName: webui.TemplatePlugins, page: qaPlugins, gallery: true},
 	{name: "plugins/marketplaces", label: "Plugins · Marketplaces", templateName: webui.TemplatePlugins, page: qaPluginMarketplaces, gallery: true},
 	{name: "plugins-marketplaces-empty", label: "Plugins · Empty marketplaces", templateName: webui.TemplatePlugins, page: func() webui.Page { p := qaPluginMarketplaces(); p.Plugins.MarketplaceRows = nil; return p }, gallery: true},

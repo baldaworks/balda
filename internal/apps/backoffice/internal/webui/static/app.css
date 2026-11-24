@@ -11,6 +11,7 @@
 html, body { color: var(--ink); background: var(--canvas); }
 :focus-visible { outline: 3px solid var(--focus) !important; outline-offset: 3px; }
 .skip-link { position: fixed; z-index: 1200; top: .5rem; left: .75rem; padding: .65rem .9rem; background: var(--surface); color: var(--accent); border: 2px solid var(--focus); border-radius: .35rem; transform: translateY(-160%); }
+.skip-link:not(:focus) { clip-path: inset(50%); width: 1px; height: 1px; overflow: hidden; padding: 0; border: 0; }
 .skip-link:focus { transform: translateY(0); }
 .app-header { min-height: var(--shell-header-height); padding-block: 0; border-bottom: 1px solid var(--border); background: var(--surface); }
 .app-header .container-fluid { gap: .75rem; }
@@ -215,3 +216,8 @@ summary:not(.btn) { color: var(--accent); font-weight: 500; }
 .archive-table th:nth-child(2) { width: 23%; }
 .archive-table th:nth-child(3) { width: 18%; }
 .archive-table th:nth-child(4) { width: 12%; }
+
+@media (min-width: 992px) {
+  [data-plugins] .plugins-marketplaces-table { min-width: 0; table-layout: fixed; }
+  [data-plugins] .plugins-marketplaces-table th { min-width: 0 !important; white-space: normal; }
+}

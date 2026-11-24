@@ -115,6 +115,7 @@ internal/apps/backoffice/providers_test.go|TestProviderTypeSpecificFormsRejectIn
 internal/apps/backoffice/providers_test.go|TestProvidersBrowserManagementAndSecretBoundary|handler-authorization
 internal/apps/backoffice/qa_matrix_test.go|TestQAStateMatrixEvidenceIsCurrent|out-of-scope-backoffice-feature
 internal/apps/backoffice/qa_matrix_test.go|TestValidateGoTestFunction|out-of-scope-backoffice-feature
+internal/apps/backoffice/qa_server_test.go|TestQAOperatorDestinations|out-of-scope-backoffice-feature
 internal/apps/backoffice/qa_server_test.go|TestServeQARejectsNonLoopbackAndOccupiedListener|out-of-scope-backoffice-feature
 internal/apps/backoffice/qa_server_test.go|TestServeQAWithoutApplicationState|out-of-scope-backoffice-feature
 internal/apps/backoffice/recovery_test.go|TestRecoveryRejectsIneligibleTargetsWithoutMutation|out-of-scope-backoffice-feature

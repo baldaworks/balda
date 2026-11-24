@@ -374,15 +374,15 @@ async function checkPage(browser, baseURL, viewport) {
   }
 
   const nativeLayouts = new Map();
-  const destinations = ['Overview', 'Account', 'Access', 'MCP', 'Audit'];
+  const destinations = { Overview: 'overview', Account: 'account', Access: 'access-list', MCP: 'mcp', Audit: 'audit' };
   async function layout() {
     return page.locator('main#main-content').evaluate(element => {
       const bounds = element.querySelector('.container-fluid').getBoundingClientRect();
       return { x: bounds.x, width: bounds.width, headingColor: getComputedStyle(element.querySelector('h1')).color };
     });
   }
-  for (const name of destinations) {
-    await page.goto(`${baseURL}/qa/ui/${name.toLowerCase()}`);
+  for (const [name, route] of Object.entries(destinations)) {
+    await page.goto(`${baseURL}/qa/ui/${route}`);
     nativeLayouts.set(name, await layout());
   }
   await page.goto(`${baseURL}/qa/ui/overview`);
@@ -403,7 +403,7 @@ async function checkPage(browser, baseURL, viewport) {
   for (const name of ['Account', 'Access', 'Audit', 'Overview']) {
     const navigation = page.getByRole('navigation', { name: 'Primary navigation', exact: true });
     if (name !== 'Account' && viewport.width < 992) await page.getByRole('button', { name: 'Toggle navigation' }).click();
-    const response = page.waitForResponse(response => response.url() === `${baseURL}/qa/ui/${name.toLowerCase()}`);
+    const response = page.waitForResponse(response => response.url() === `${baseURL}/qa/ui/${destinations[name]}`);
     if (name === 'Account') await page.getByRole('link', { name: 'Your account' }).click();
     else await navigation.getByRole('link', { name, exact: true }).click();
     await response;
