@@ -186,7 +186,7 @@ func TestRuntimeForSessionProjectsSkillMetadataAndExtensionInstructionsToProvide
 
 	requestedModel := "model-requested"
 	runtime, err := manager.RuntimeForSession(context.Background(), SessionRuntimeRequest{
-		Locator:       deliverycmd.Locator{SessionID: "session-1", ChannelType: "telegram"},
+		Locator:       deliverycmd.Locator{SessionID: "session-1", ChannelType: "schedule"},
 		ModelOverride: &requestedModel,
 	})
 	if err != nil {
@@ -212,7 +212,7 @@ func TestRuntimeForSessionProjectsSkillMetadataAndExtensionInstructionsToProvide
 			t.Fatalf("provider instruction missing %q:\n%s", want, instruction)
 		}
 	}
-	if contributorInput.SnapshotID != "snapshot-prism" || contributorInput.SessionID != "session-1" || contributorInput.ChannelType != "telegram" {
+	if contributorInput.SnapshotID != "snapshot-prism" || contributorInput.SessionID != "session-1" || contributorInput.ChannelType != "schedule" {
 		t.Fatalf("contributor input = %+v, want pinned session context", contributorInput)
 	}
 }

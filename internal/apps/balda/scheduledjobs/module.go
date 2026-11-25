@@ -4,14 +4,22 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/baldaworks/balda/internal/apps/balda/agent"
 	"github.com/baldaworks/balda/internal/apps/balda/appports"
 	"github.com/baldaworks/balda/internal/apps/balda/state"
 	"go.uber.org/fx"
 )
 
+var scheduledRunInstructionProvider = fx.Annotate(
+	newScheduledRunInstructionContributor,
+	fx.As(new(agent.SessionInstructionContributor)),
+	fx.ResultTags(`group:"balda_session_instruction_contributors"`),
+)
+
 // Module wires the scheduled job application service.
 var Module = fx.Module("balda_scheduled_jobs",
 	fx.Provide(
+		scheduledRunInstructionProvider,
 		NewRunFinalizer,
 		func(params scheduledJobSchedulerParams) (*ScheduledJobScheduler, error) {
 			if params.JobStore == nil {
