@@ -249,6 +249,9 @@ func TestResumeEnvelope(t *testing.T) {
 	if env.To.Target != "goalkeeper" || env.To.Key != "goal-resume-123" {
 		t.Errorf("env.To = %v, want goalkeeper:goal-resume-123", env.To)
 	}
+	if !goalkeepercmd.IsResumeEnvelope(env) {
+		t.Error("IsResumeEnvelope() = false, want true")
+	}
 
 	// Empty JobID fails
 	_, err = goalkeepercmd.ResumeEnvelope(goalkeepercmd.JobPayload{JobID: ""})

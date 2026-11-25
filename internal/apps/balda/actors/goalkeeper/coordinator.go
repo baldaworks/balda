@@ -9,11 +9,12 @@ import (
 	"github.com/baldaworks/balda/internal/apps/balda/permissioncmd"
 	"github.com/baldaworks/balda/internal/apps/balda/questioncmd"
 
-	"github.com/baldaworks/go-actorlayer"
-	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	"github.com/baldaworks/balda/internal/apps/balda/goaldelivery"
+	"github.com/baldaworks/balda/internal/apps/balda/goalkeepercmd"
 	"github.com/baldaworks/balda/internal/apps/balda/questions"
 	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
+	"github.com/baldaworks/go-actorlayer"
+	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	"github.com/rs/zerolog"
 )
 
@@ -90,8 +91,10 @@ func (c *coordinator) execute(ctx context.Context, env actorlayer.Envelope, payl
 	}); err != nil {
 		return actorlayer.TransientError(err)
 	}
-	if err := progressEmitter.deliver(ctx, jobID, payload, goaldelivery.RenderStartedMessage(goalDeliveryFormat(payload), maxIterations, objective), "started"); err != nil {
-		return err
+	if !goalkeepercmd.IsResumeEnvelope(env) {
+		if err := progressEmitter.deliver(ctx, jobID, payload, goaldelivery.RenderStartedMessage(goalDeliveryFormat(payload), maxIterations, objective), "started"); err != nil {
+			return err
+		}
 	}
 
 	if c.goalRunPreparer == nil {
