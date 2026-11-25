@@ -188,7 +188,7 @@ func TestLifecycleRationalizationInventoryIsComplete(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read exact rationalization inventory: %v\nresolved inventory:\n%s", err, inventory)
 	}
-	const wantFocusedTests = 447
+	const wantFocusedTests = 450
 	if err := compareRationalizationInventory(snapshot, inventory, wantFocusedTests); err != nil {
 		t.Fatal(err)
 	}
