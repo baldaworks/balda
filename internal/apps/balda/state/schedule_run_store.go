@@ -256,6 +256,7 @@ func (s *sqlScheduleRunStore) ListUnclosedDispatched(
 		  WHERE job.id = balda_schedule_runs.execution_job_id
 		  AND job.status IN ('completed', 'failed', 'canceled', 'deadlettered')
 		  AND (job.session_id NOT LIKE 'sch-%' OR NOT (` + reportEnabled + `)
+		    OR (job.status = 'completed' AND COALESCE(job.result, '') = '' AND COALESCE(job.error, '') = '')
 		    OR (job.status IN ('canceled', 'deadlettered') AND NOT EXISTS
 		      (SELECT 1 FROM execution_delivery_outbox pending
 		       WHERE pending.job_id = job.id

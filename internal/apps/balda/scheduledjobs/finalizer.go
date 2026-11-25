@@ -93,7 +93,9 @@ func (f *RunFinalizer) settleRun(ctx context.Context, run state.ScheduleRunRecor
 		// Older, pre-isolation runs belong to ordinary chat sessions.
 		return f.runs.MarkClosed(ctx, run.RunID, f.now().UTC())
 	}
-	if snapshot.ReportToEnabled {
+	silentSuccess := job.Status == state.JobStatusCompleted &&
+		strings.TrimSpace(job.Result) == "" && strings.TrimSpace(job.Error) == ""
+	if snapshot.ReportToEnabled && !silentSuccess {
 		delivery, found, err := f.deliveries.FinalDelivery(ctx, run.ExecutionJobID)
 		if err != nil {
 			return err

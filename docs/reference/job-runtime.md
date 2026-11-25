@@ -76,6 +76,11 @@ recurring schedules.
 - Output and delivery: the execution job stores the provider output, and the
   run snapshot stores its input. If a destination is selected, Balda offers that
   output (or a bounded failure message) through the durable delivery outbox.
+  A successful `TurnComplete` with no visible provider output is stored as a
+  completed job with empty result and error. It creates no delivery, including
+  when the snapshot has a report destination; progress is not promoted to final
+  output. Finalization recognizes that durable state and does not wait for a
+  delivery record that will never exist.
   Progress and interactive permission questions never go to the report locator;
   permission requests that require a live conversation fail closed.
   No destination means no external delivery. The private runtime session, its events,
@@ -106,7 +111,8 @@ recurring schedules.
   Archived schedules retain readable history. Browser inventory exposes bounded
   status/failure labels without instruction content. Guarded run detail exposes
   the selected concrete locator, frozen input and durable output, regardless of
-  report delivery.
+  report delivery. Silent successful runs expose empty output and completed
+  status rather than fabricated report content.
 
 ## Inbound webhook contract (internal)
 
