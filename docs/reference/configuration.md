@@ -28,18 +28,22 @@ Balda. Forward requests to the shared listener with the original path and raw
 request body. The handlers keep their existing browser, webhook-secret, and
 transport-signature checks.
 
+Application settings use the loader prefix (default `BALDA`) followed by the uppercase path inside `balda`, with underscores between segments. For example, `balda.security.key` maps to `BALDA_SECURITY_KEY` and `balda.http.base_url` maps to `BALDA_HTTP_BASE_URL`.
+
+Both `balda start` and `balda validate` check field constraints after merging configuration sources. Validation errors identify the field and rule without printing the configured value.
+
 Config shape:
 
 ```yaml
-app:
-  # Strict standard-base64 encoding of exactly 32 bytes.
-  security_key: ""
 runtime:
   providers:
     <provider_id>:
       type: <provider_type>
   mcp_servers: {}
 balda:
+  security:
+    # Strict standard base64 encoding of exactly 32 bytes.
+    key: ""
   provider: <provider_id>  # optional until an agent-backed feature is used
   http:
     listen_addr: "127.0.0.1:8095"
@@ -108,7 +112,7 @@ disabled, deleted, incomplete, or temporarily unusable, does not prevent the
 base runtime, Backoffice, or enabled integrations from starting. Static
 application configuration and source-ID collisions remain startup errors. This
 provider-lazy boundary does not bypass retained encryption validation: an
-encrypted historical revision that cannot be opened with `app.security_key`
+encrypted historical revision that cannot be opened with `balda.security.key`
 fails preflight/startup even when its Provider is disabled or deleted.
 
 Agent-backed work resolves the selected graph on first use. A missing or
@@ -124,7 +128,7 @@ Providers. They apply to new sessions; `/reset` and `/new` preserve an active
 session's stored binding. The managed source excludes generic ACP definitions, explicit
 commands, and command overrides. Root selection remains in configuration.
 Protected API keys and ACP environment values use
-the application-wide `app.security_key`; see
+the application-wide `balda.security.key`; see
 [Providers management](backoffice.md#providers-management) and
 [database backup and restore](database.md#backup-restore-and-changing-engines).
 
@@ -522,8 +526,8 @@ definitions remain OAuth-neutral and use their public endpoint or configured
 headers. For managed OAuth, the operator signs in at the external service.
 Stdio keeps its ordinary command, arguments and environment configuration.
 
-Set `app.security_key`, or the exact environment override
-`BALDA_APP_SECURITY_KEY`, through the deployment's secret mechanism before
+Set `balda.security.key`, or the exact environment override
+`BALDA_SECURITY_KEY`, through the deployment's secret mechanism before
 storing protected values. The value is strict standard base64 encoding of
 exactly 32 bytes. It is the only configured root for Balda-owned at-rest
 encryption. An empty value is accepted only while no retained encrypted state
@@ -545,7 +549,7 @@ Before upgrading an installation that used
 `balda.mcp_management.credential_key` or
 `BALDA_MCP_MANAGEMENT_CREDENTIAL_KEY`, stop all Balda writers and take a
 consistent database backup paired with the existing key. Move the identical
-value to `app.security_key` or `BALDA_APP_SECURITY_KEY`, remove the obsolete
+value to `balda.security.key` or `BALDA_SECURITY_KEY`, remove the obsolete
 setting/environment variable, then run `balda validate` and `balda preflight`.
 A non-empty obsolete field is rejected; it is never a fallback or second active
 root. No ciphertext rewrite is required for this config move.

@@ -27,7 +27,7 @@ balda:
 		t.Fatal(err)
 	}
 	var doc baldaConfigDocument
-	_, err := appconfig.LoadConfigDocument(
+	_, err := loadBaldaDocument(
 		appconfig.RuntimeLoadOptions{WorkingDir: workingDir},
 		appconfig.AppLoadOptions{AppName: "balda", DefaultsYAML: defaultBaldaConfig, UseDotConfigAppDir: true},
 		&doc,
@@ -35,7 +35,6 @@ balda:
 	if err != nil {
 		t.Fatal(err)
 	}
-	applyHTTPBasePathEnv(&doc.Balda)
 	resolved, err := doc.Balda.ResolveHTTP()
 	if err != nil {
 		t.Fatal(err)
@@ -48,9 +47,14 @@ balda:
 func TestApplyHTTPBasePathEnvCanSelectRoot(t *testing.T) {
 	t.Setenv("BALDA_HTTP_BASE_PATH", "")
 	var cfg baldaConfigDocument
-	legacy := "/legacy"
-	cfg.Balda.Backoffice.BasePath = legacy
-	applyHTTPBasePathEnv(&cfg.Balda)
+	opts := appconfig.AppLoadOptions{AppName: "balda", DefaultsYAML: defaultBaldaConfig, UseDotConfigAppDir: true}
+	dir := t.TempDir()
+	if err := writeFile(filepath.Join(dir, ".config", "balda", "config.yaml"), acpTestRuntime+"balda:\n  http:\n    base_path: /original\n  backoffice:\n    base_path: /legacy\n"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := loadBaldaDocument(appconfig.RuntimeLoadOptions{WorkingDir: dir}, opts, &cfg); err != nil {
+		t.Fatal(err)
+	}
 	resolved, err := cfg.Balda.ResolveHTTP()
 	if err != nil {
 		t.Fatal(err)
@@ -77,7 +81,7 @@ balda:
 		t.Fatal(err)
 	}
 	var doc baldaConfigDocument
-	_, err := appconfig.LoadConfigDocument(
+	_, err := loadBaldaDocument(
 		appconfig.RuntimeLoadOptions{WorkingDir: workingDir},
 		appconfig.AppLoadOptions{AppName: "balda", DefaultsYAML: defaultBaldaConfig, UseDotConfigAppDir: true},
 		&doc,
@@ -111,7 +115,7 @@ balda:
 		t.Fatal(err)
 	}
 	var doc baldaConfigDocument
-	_, err := appconfig.LoadConfigDocument(
+	_, err := loadBaldaDocument(
 		appconfig.RuntimeLoadOptions{WorkingDir: workingDir},
 		appconfig.AppLoadOptions{AppName: "balda", DefaultsYAML: defaultBaldaConfig, UseDotConfigAppDir: true},
 		&doc,
@@ -178,7 +182,7 @@ func TestLoadedDefaultsDoNotAdvertiseWebhookPublicOrigin(t *testing.T) {
 		t.Fatal(err)
 	}
 	var doc baldaConfigDocument
-	_, err := appconfig.LoadConfigDocument(appconfig.RuntimeLoadOptions{WorkingDir: workingDir}, appconfig.AppLoadOptions{AppName: "balda", DefaultsYAML: defaultBaldaConfig, UseDotConfigAppDir: true}, &doc)
+	_, err := loadBaldaDocument(appconfig.RuntimeLoadOptions{WorkingDir: workingDir}, appconfig.AppLoadOptions{AppName: "balda", DefaultsYAML: defaultBaldaConfig, UseDotConfigAppDir: true}, &doc)
 	if err != nil {
 		t.Fatal(err)
 	}

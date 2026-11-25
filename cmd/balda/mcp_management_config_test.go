@@ -3,10 +3,11 @@ package main
 import (
 	"fmt"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	baldaapp "github.com/baldaworks/balda/internal/apps/balda"
+	"github.com/baldaworks/runtime/v2/appconfig"
+	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
 
@@ -15,7 +16,7 @@ const testApplicationSecurityKey = "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=
 func TestLoadConfigDocumentAppliesApplicationSecurityKeyOverride(t *testing.T) {
 	workingDir := t.TempDir()
 	t.Chdir(workingDir)
-	t.Setenv("BALDA_APP_SECURITY_KEY", testApplicationSecurityKey)
+	t.Setenv("BALDA_SECURITY_KEY", testApplicationSecurityKey)
 	viper.Reset()
 	t.Cleanup(viper.Reset)
 	if err := writeFile(filepath.Join(workingDir, ".config", "balda", "config.yaml"), "runtime:\n  providers:\n    balda_agent:\n      type: opencode_acp\n      opencode_acp:\n        model: opencode/big-pickle\nbalda:\n  provider: balda_agent\n"); err != nil {
@@ -25,7 +26,7 @@ func TestLoadConfigDocumentAppliesApplicationSecurityKeyOverride(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if prepared.doc.App.SecurityKey != testApplicationSecurityKey || prepared.baldaCfg.App.SecurityKey != testApplicationSecurityKey {
+	if prepared.doc.Balda.Security.Key != testApplicationSecurityKey || prepared.baldaCfg.Balda.Security.Key != testApplicationSecurityKey {
 		t.Fatal("application security key override was not applied")
 	}
 }
@@ -35,7 +36,7 @@ func TestLoadConfigDocumentAppliesApplicationSecurityKeyFromYAML(t *testing.T) {
 	t.Chdir(workingDir)
 	viper.Reset()
 	t.Cleanup(viper.Reset)
-	config := fmt.Sprintf("app:\n  security_key: %q\nruntime:\n  providers:\n    balda_agent:\n      type: opencode_acp\n      opencode_acp:\n        model: opencode/big-pickle\nbalda:\n  provider: balda_agent\n", testApplicationSecurityKey)
+	config := fmt.Sprintf("runtime:\n  providers:\n    balda_agent:\n      type: opencode_acp\n      opencode_acp:\n        model: opencode/big-pickle\nbalda:\n  provider: balda_agent\n  security:\n    key: %q\n", testApplicationSecurityKey)
 	if err := writeFile(filepath.Join(workingDir, ".config", "balda", "config.yaml"), config); err != nil {
 		t.Fatal(err)
 	}
@@ -44,61 +45,76 @@ func TestLoadConfigDocumentAppliesApplicationSecurityKeyFromYAML(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if prepared.baldaCfg.App.SecurityKey != testApplicationSecurityKey {
-		t.Fatal("app.security_key YAML value was not applied")
+	if prepared.baldaCfg.Balda.Security.Key != testApplicationSecurityKey {
+		t.Fatal("balda.security.key YAML value was not applied")
 	}
 }
 
-func TestLoadBaldaCommandConfigRejectsInvalidApplicationSecurityKey(t *testing.T) {
-	workingDir := t.TempDir()
-	t.Chdir(workingDir)
-	t.Setenv("BALDA_APP_SECURITY_KEY", "not-base64")
-	viper.Reset()
-	t.Cleanup(viper.Reset)
-	if err := writeFile(filepath.Join(workingDir, ".config", "balda", "config.yaml"), "runtime:\n  providers:\n    balda_agent:\n      type: opencode_acp\n      opencode_acp:\n        model: opencode/big-pickle\nbalda:\n  provider: balda_agent\n"); err != nil {
+func TestCommandsRejectInvalidSecurityKey(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	t.Setenv("BALDA_SECURITY_KEY", "not-base64")
+	if err := writeFile(filepath.Join(dir, ".config", "balda", "config.yaml"), acpTestRuntime); err != nil {
 		t.Fatal(err)
 	}
-
-	_, err := loadBaldaCommandConfig(false)
-	if err == nil || !strings.Contains(err.Error(), "app.security_key is invalid") || strings.Contains(err.Error(), "not-base64") {
-		t.Fatalf("loadBaldaCommandConfig() error = %v", err)
+	for _, cmd := range []*cobra.Command{startCommand(), validateCommand()} {
+		t.Run(cmd.Name(), func(t *testing.T) {
+			err := cmd.RunE(cmd, nil)
+			if err == nil || err.Error() != "balda.security.key failed validation rule encryption_key" {
+				t.Fatalf("unexpected validation error: %v", err)
+			}
+		})
 	}
 }
 
-func TestLoadBaldaCommandConfigRejectsObsoleteEncryptionRoot(t *testing.T) {
-	workingDir := t.TempDir()
-	t.Chdir(workingDir)
-	t.Setenv("BALDA_MCP_MANAGEMENT_CREDENTIAL_KEY", "obsolete-key")
-	viper.Reset()
-	t.Cleanup(viper.Reset)
-	if err := writeFile(filepath.Join(workingDir, ".config", "balda", "config.yaml"), "runtime:\n  providers:\n    balda_agent:\n      type: opencode_acp\n      opencode_acp:\n        model: opencode/big-pickle\nbalda:\n  provider: balda_agent\n"); err != nil {
-		t.Fatal(err)
-	}
-
-	_, err := loadBaldaCommandConfig(false)
-	if err == nil || !strings.Contains(err.Error(), "move the identical value to app.security_key") {
-		t.Fatalf("loadBaldaCommandConfig() error = %v", err)
-	}
-}
-
-func TestResolveSecurityKeyRejectsConflictingRoots(t *testing.T) {
-	cfg := baldaapp.Config{
-		App: baldaapp.AppConfig{SecurityKey: "canonical"},
-		Balda: baldaapp.BaldaConfig{MCPManagement: baldaapp.MCPManagementConfig{
-			CredentialKey: "obsolete",
-		}},
-	}
-	if _, err := cfg.ResolveSecurityKey(); err == nil {
-		t.Fatal("ResolveSecurityKey() accepted two configured roots")
-	}
-}
-
-func TestResolveSecurityKeyAcceptsMissingAndValidCanonicalRoot(t *testing.T) {
-	for _, want := range []string{"", testApplicationSecurityKey} {
-		cfg := baldaapp.Config{App: baldaapp.AppConfig{SecurityKey: want}}
-		got, err := cfg.ResolveSecurityKey()
-		if err != nil || got != want {
-			t.Fatalf("ResolveSecurityKey() = %q, %v, want %q", got, err, want)
+func TestConfigValidatesEncryptionKey(t *testing.T) {
+	for _, tc := range []struct {
+		key   string
+		valid bool
+	}{{"", true}, {testApplicationSecurityKey, true}, {"YQ==", false}, {"invalid", false}} {
+		cfg := baldaapp.Config{Balda: baldaapp.BaldaConfig{Security: baldaapp.SecurityConfig{Key: tc.key}}}
+		err := cfg.Validate()
+		if (err == nil) != tc.valid {
+			t.Fatal("unexpected key validation outcome")
 		}
+	}
+}
+
+func TestSecurityKeyEnvPrefixAndPrecedence(t *testing.T) {
+	for _, value := range []string{"", testApplicationSecurityKey} {
+		t.Run(fmt.Sprintf("length_%d", len(value)), func(t *testing.T) {
+			dir := t.TempDir()
+			t.Setenv("CUSTOM_SECURITY_KEY", value)
+			if err := writeFile(filepath.Join(dir, ".config", "balda", "config.yaml"), acpTestRuntime+"balda:\n  security:\n    key: file-value\n"); err != nil {
+				t.Fatal(err)
+			}
+			var doc baldaConfigDocument
+			_, err := loadBaldaDocument(appconfig.RuntimeLoadOptions{WorkingDir: dir}, appconfig.AppLoadOptions{AppName: "balda", EnvPrefix: "CUSTOM", DefaultsYAML: defaultBaldaConfig, UseDotConfigAppDir: true}, &doc)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if doc.Balda.Security.Key != value {
+				t.Fatal("security key environment precedence lost")
+			}
+		})
+	}
+}
+
+func TestLoadBaldaDocumentBindsApplicationPaths(t *testing.T) {
+	dir := t.TempDir()
+	if err := writeFile(filepath.Join(dir, ".config", "balda", "config.yaml"), acpTestRuntime+"balda:\n  security:\n    key: null\n"); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("BALDA_SECURITY_KEY", testApplicationSecurityKey)
+	t.Setenv("BALDA_TELEGRAM_TOKEN", "telegram-token")
+	t.Setenv("BALDA_SLACK_BOT_TOKEN", "slack-token")
+	t.Setenv("BALDA_HTTP_BASE_URL", "https://example.test")
+	var doc baldaConfigDocument
+	_, err := loadBaldaDocument(appconfig.RuntimeLoadOptions{WorkingDir: dir}, appconfig.AppLoadOptions{AppName: "balda", DefaultsYAML: defaultBaldaConfig, UseDotConfigAppDir: true}, &doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if doc.Balda.Security.Key != testApplicationSecurityKey || doc.Balda.Telegram.Token != "telegram-token" || doc.Balda.Slack.BotToken != "slack-token" || doc.Balda.HTTP.BaseURL != "https://example.test" {
+		t.Fatal("application environment overrides did not reach the decoded config")
 	}
 }

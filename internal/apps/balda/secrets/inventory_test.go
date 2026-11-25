@@ -119,19 +119,14 @@ func TestConfiguredEncryptionRootsArePinnedToApplicationSecurityKey(t *testing.T
 	root := repositoryRoot(t)
 	fields, envNames := discoverConfiguredEncryptionRoots(t, root)
 	wantFields := []string{
-		"internal/apps/balda/config.go:AppConfig.SecurityKey:security_key",
 		"internal/apps/balda/config.go:MCPManagementConfig.CredentialKey:credential_key",
+		"internal/apps/balda/config.go:SecurityConfig.Key:key",
 	}
 	if !slices.Equal(fields, wantFields) {
-		t.Fatalf("configured encryption-root fields changed; app.security_key is the sole active root and credential_key is migration rejection only\ngot:  %v\nwant: %v", fields, wantFields)
+		t.Fatalf("configured encryption-root fields changed; balda.security.key is the sole active root and credential_key is migration rejection only\ngot:  %v\nwant: %v", fields, wantFields)
 	}
-	for _, name := range envNames {
-		if name != "BALDA_APP_SECURITY_KEY" {
-			t.Fatalf("feature-specific encryption-root environment override discovered: %s", name)
-		}
-	}
-	if len(envNames) == 0 {
-		t.Fatal("BALDA_APP_SECURITY_KEY environment contract disappeared")
+	if len(envNames) > 0 {
+		t.Fatalf("unexpected hard-coded encryption environment names: %v", envNames)
 	}
 }
 
@@ -149,11 +144,11 @@ func TestEncryptionDocumentationPublishesSingleRootCompatibilityContract(t *test
 			t.Fatal(err)
 		}
 		text := string(content)
-		if !strings.Contains(text, "app.security_key") {
-			t.Errorf("%s does not publish app.security_key", relative)
+		if !strings.Contains(text, "balda.security.key") {
+			t.Errorf("%s does not publish balda.security.key", relative)
 		}
-		if relative != "docs/reference/backoffice.md" && !strings.Contains(text, "BALDA_APP_SECURITY_KEY") {
-			t.Errorf("%s does not publish BALDA_APP_SECURITY_KEY", relative)
+		if relative != "docs/reference/backoffice.md" && !strings.Contains(text, "BALDA_SECURITY_KEY") {
+			t.Errorf("%s does not publish BALDA_SECURITY_KEY", relative)
 		}
 	}
 	architecture, err := os.ReadFile(filepath.Join(root, "docs/architecture/application-encryption.md"))
@@ -549,7 +544,7 @@ func discoverConfiguredEncryptionRoots(t *testing.T, root string) ([]string, []s
 						return err
 					}
 					mapTag := strings.Split(reflect.StructTag(rawTag).Get("mapstructure"), ",")[0]
-					if rootKeyLike(field.Names[0].Name) || rootKeyLike(mapTag) {
+					if (field.Names[0].Name == "Key" && rootKeyLike(strings.TrimSuffix(typeSpec.Name.Name, "Config")+"Key")) || rootKeyLike(field.Names[0].Name) || rootKeyLike(mapTag) {
 						fields = append(fields, rel+":"+typeSpec.Name.Name+"."+field.Names[0].Name+":"+mapTag)
 					}
 				}

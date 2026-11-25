@@ -162,10 +162,10 @@ an explicit compatibility procedure, separate from ordinary backup recovery
 and from any production rollout already performed. An older captured image's
 provenance does not change these source schema floors.
 
-Back up the exact `app.security_key` securely alongside every database backup
+Back up the exact `balda.security.key` securely alongside every database backup
 when protected MCP values, worker grants, or managed Provider values are
-stored. Restore the matching key through `app.security_key` or
-`BALDA_APP_SECURITY_KEY` before starting the restored deployment. The database
+stored. Restore the matching key through `balda.security.key` or
+`BALDA_SECURITY_KEY` before starting the restored deployment. The database
 alone cannot decrypt that data. Retained MCP and Provider revisions need the
 same key even after a definition is edited or deleted. A non-empty obsolete
 `balda.mcp_management.credential_key` is migration-only input and is rejected;

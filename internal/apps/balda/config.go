@@ -1,14 +1,18 @@
 package balda
 
 import (
+	"errors"
 	"fmt"
 	"math"
+	"reflect"
+	"strings"
 
 	"github.com/baldaworks/balda/internal/apps/backoffice"
 	"github.com/baldaworks/balda/internal/apps/balda/attachment"
 	baldaeventbus "github.com/baldaworks/balda/internal/apps/balda/eventbus"
 	"github.com/baldaworks/balda/internal/apps/balda/secrets"
 	"github.com/baldaworks/balda/internal/apps/balda/state"
+	"github.com/go-playground/validator/v10"
 )
 
 const (
@@ -19,18 +23,18 @@ const (
 
 // Config holds the configuration for the Balda bot.
 type Config struct {
-	App   AppConfig   `mapstructure:"app"`
 	Balda BaldaConfig `mapstructure:"balda"`
 }
 
-// AppConfig owns application-wide security material. Features receive scoped
+// SecurityConfig owns application-wide security material. Features receive scoped
 // protectors and must not add their own configured encryption roots.
-type AppConfig struct {
-	SecurityKey string `mapstructure:"security_key" json:"-"`
+type SecurityConfig struct {
+	Key string `mapstructure:"key" json:"-" validate:"omitempty,encryption_key"`
 }
 
 // BaldaConfig holds the balda-specific configuration.
 type BaldaConfig struct {
+	Security            SecurityConfig            `mapstructure:"security"`
 	Provider            string                    `mapstructure:"provider"`
 	ACPStartupTimeout   string                    `mapstructure:"acp_startup_timeout"`
 	HTTP                HTTPConfig                `mapstructure:"http"`
@@ -61,22 +65,41 @@ type BaldaConfig struct {
 }
 
 // MCPManagementConfig retains the obsolete field only so configuration can
-// reject it with explicit migration guidance. It is never an active key source.
+// reject a second configured root. It is never an active key source.
 type MCPManagementConfig struct {
-	CredentialKey string `mapstructure:"credential_key" json:"-"`
+	CredentialKey string `mapstructure:"credential_key" json:"-" validate:"isdefault"`
 }
 
-// ResolveSecurityKey returns the sole configured encryption root. The obsolete
-// MCP field is rejected even when app.security_key is also set, so there is no
-// fallback or precedence between two apparent roots.
-func (c Config) ResolveSecurityKey() (string, error) {
-	if c.Balda.MCPManagement.CredentialKey != "" {
-		return "", fmt.Errorf("balda.mcp_management.credential_key is obsolete; move the identical value to app.security_key or BALDA_APP_SECURITY_KEY")
+var configValidator = newConfigValidator()
+
+func newConfigValidator() *validator.Validate {
+	v := validator.New()
+	v.RegisterTagNameFunc(func(field reflect.StructField) string {
+		name, _, _ := strings.Cut(field.Tag.Get("mapstructure"), ",")
+		return name
+	})
+	if err := v.RegisterValidation("encryption_key", func(field validator.FieldLevel) bool {
+		_, err := secrets.NewRoot(field.Field().String())
+		return err == nil
+	}); err != nil {
+		panic(err)
 	}
-	if _, err := secrets.NewRoot(c.App.SecurityKey); err != nil {
-		return "", fmt.Errorf("app.security_key is invalid: %w", err)
+	return v
+}
+
+// Validate checks the field constraints on the resolved application configuration.
+func (c Config) Validate() error {
+	err := configValidator.Struct(c)
+	if err == nil {
+		return nil
 	}
-	return c.App.SecurityKey, nil
+	var violations validator.ValidationErrors
+	if !errors.As(err, &violations) {
+		return fmt.Errorf("validate Balda configuration: %w", err)
+	}
+	field := violations[0]
+	path := strings.TrimPrefix(field.Namespace(), "Config.")
+	return fmt.Errorf("%s failed validation rule %s", path, field.Tag())
 }
 
 // SessionInstructionsConfig controls trusted host instruction contributions.

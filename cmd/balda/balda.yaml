@@ -14,12 +14,12 @@
 #           CODEX_HOME: /state/providers/codex-work
 # See docs/reference/configuration.md for inheritance and secret-handling rules.
 
-app:
-  # Sole application-wide root for Balda-owned encryption. Supply a strict
-  # standard-base64 encoded 32-byte value or BALDA_APP_SECURITY_KEY.
-  security_key: ""
-
 balda:
+  security:
+    # balda.security.key uses strict standard base64 encoding of 32 bytes.
+    # Set via BALDA_SECURITY_KEY.
+    key: ""
+
   # Provider id from runtime providers registry used for Balda sessions.
   provider: ""
 
@@ -359,7 +359,7 @@ balda:
   mcp_servers: []
   mcp_management:
     # Obsolete. A non-empty value is rejected; move the identical value to
-    # app.security_key.
+    # balda.security.key.
     credential_key: ""
 
   # Optional balda-wide global instruction applied to all sessions.
