@@ -4,10 +4,10 @@ import (
 	"context"
 	"testing"
 
-	"github.com/baldaworks/go-actorlayer"
-	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	"github.com/baldaworks/balda/internal/apps/balda/goalkeepercmd"
 	baldastate "github.com/baldaworks/balda/internal/apps/balda/state"
+	"github.com/baldaworks/go-actorlayer"
+	actortransport "github.com/baldaworks/go-actorlayer/transport"
 	"github.com/rs/zerolog"
 )
 
@@ -111,5 +111,8 @@ func TestGoalkeeperAcceptsQuestionContinuation(t *testing.T) {
 	}
 	if resumed.Goal.Objective == "ship release" {
 		t.Fatalf("objective = %q, want clarification appended", resumed.Goal.Objective)
+	}
+	if !goalkeepercmd.IsResumeEnvelope(dispatcher.commands[0]) {
+		t.Fatal("resumed command is missing resume metadata")
 	}
 }

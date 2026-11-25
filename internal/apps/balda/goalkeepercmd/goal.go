@@ -6,17 +6,19 @@ import (
 	"fmt"
 	"strings"
 
+	baldaexecution "github.com/baldaworks/balda/internal/apps/balda/actorcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliverycmd"
 	"github.com/baldaworks/balda/internal/apps/balda/deliveryfmt"
 	"github.com/baldaworks/go-actorlayer"
 	"github.com/google/uuid"
-	baldaexecution "github.com/baldaworks/balda/internal/apps/balda/actorcmd"
 )
 
 const (
 	PayloadKindGoal      = "goal"
 	PayloadKindQuestion  = "question"
 	DefaultMaxIterations = 25
+	resumeMetaKey        = "goal_resume"
+	resumeMetaValue      = "true"
 )
 
 type EnvelopePayload struct {
@@ -131,17 +133,24 @@ func ResumeEnvelope(payload JobPayload) (actorlayer.Envelope, error) {
 	if err != nil {
 		return actorlayer.Envelope{}, fmt.Errorf("encode resumed goalkeeper job payload: %w", err)
 	}
+	meta := baldaexecution.WithSessionIDMeta(baldaexecution.WithJobIDMeta(nil, trimmedJobID), normalized.Locator.SessionID)
+	meta[resumeMetaKey] = resumeMetaValue
 	return actorlayer.Envelope{
 		ID:        uuid.NewString(),
 		Namespace: baldaexecution.NamespaceGoalkeeperCommand,
 		Kind:      baldaexecution.KindGoal,
 		From:      actorlayer.SystemAddress("question"),
 		To:        actorlayer.ActorAddress{Target: baldaexecution.ActorTypeGoalkeeper, Key: trimmedJobID},
-		Meta:      baldaexecution.WithSessionIDMeta(baldaexecution.WithJobIDMeta(nil, trimmedJobID), normalized.Locator.SessionID),
+		Meta:      meta,
 		Priority:  90,
 		DedupeKey: "goal-resume:" + trimmedJobID,
 		Payload:   data,
 	}, nil
+}
+
+// IsResumeEnvelope reports whether a goal command continues an existing run after a question.
+func IsResumeEnvelope(env actorlayer.Envelope) bool {
+	return strings.TrimSpace(env.Meta[resumeMetaKey]) == resumeMetaValue
 }
 
 func EncodeJobPayload(payload JobPayload) (string, error) {
