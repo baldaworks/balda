@@ -8,6 +8,7 @@ require (
 	github.com/coder/acp-go-sdk v0.13.5
 	github.com/dgraph-io/badger/v4 v4.9.6
 	github.com/fxamacker/cbor/v2 v2.9.3
+	github.com/go-playground/validator/v10 v10.30.2
 	github.com/go-webauthn/webauthn v0.18.1
 	github.com/google/uuid v1.6.0
 	github.com/ipfans/fxlogger v0.2.0
@@ -187,7 +188,6 @@ require (
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-playground/locales v0.14.1 // indirect
 	github.com/go-playground/universal-translator v0.18.1 // indirect
-	github.com/go-playground/validator/v10 v10.30.2 // indirect
 	github.com/go-sourcemap/sourcemap v2.1.3+incompatible // indirect
 	github.com/go-toolsmith/astcast v1.1.0 // indirect
 	github.com/go-toolsmith/astcopy v1.1.0 // indirect

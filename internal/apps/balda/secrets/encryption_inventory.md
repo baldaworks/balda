@@ -16,7 +16,7 @@ payload owners:
 - Provider revision API keys and environment values, with AAD binding provider
   and revision identity.
 
-All three use the same `app.security_key` root. The scoped primitive emits
+All three use the same `balda.security.key` root. The scoped primitive emits
 version-2 `version || nonce || ciphertext` frames using registered HKDF-SHA-256
 labels and opens retained version-1 frames directly with the same root. The
 obsolete `balda.mcp_management.credential_key` field is retained only to reject

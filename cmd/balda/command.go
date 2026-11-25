@@ -29,7 +29,6 @@ const shutdownTimeout = 10 * time.Second
 
 type baldaConfigDocument struct {
 	Runtime appconfig.RuntimeConfig `mapstructure:"runtime"`
-	App     balda.AppConfig         `mapstructure:"app"`
 	Balda   balda.BaldaConfig       `mapstructure:"balda"`
 }
 
@@ -236,7 +235,7 @@ func loadBaldaCommandConfig(requireChannel bool) (preparedBaldaCommand, error) {
 	}
 
 	var doc baldaConfigDocument
-	selectedProfile, err := appconfig.LoadConfigDocument(
+	selectedProfile, err := loadBaldaDocument(
 		runtimeLoadOpts,
 		appconfig.AppLoadOptions{
 			AppName:            "balda",
@@ -249,24 +248,18 @@ func loadBaldaCommandConfig(requireChannel bool) (preparedBaldaCommand, error) {
 		return preparedBaldaCommand{}, err
 	}
 	runtimeLoadOpts.Profile = selectedProfile
-	applyApplicationSecurityKeyEnv(&doc.App)
-	// appconfig discovers env overrides through non-null leaves. Preserve the
-	// nonempty env override when YAML null expresses omission of this setting.
-	if value := os.Getenv("BALDA_ACP_STARTUP_TIMEOUT"); value != "" {
-		doc.Balda.ACPStartupTimeout = value
+	baldaCfg := balda.Config{Balda: doc.Balda}
+	if err := baldaCfg.Validate(); err != nil {
+		return preparedBaldaCommand{}, err
 	}
+
 	if _, err := doc.Balda.ResolveACPStartupTimeout(); err != nil {
 		return preparedBaldaCommand{}, err
 	}
-	applyHTTPBasePathEnv(&doc.Balda)
 	if err := applyBaldaLogging(doc.Balda.Logger); err != nil {
 		return preparedBaldaCommand{}, fmt.Errorf("configure balda logging: %w", err)
 	}
 
-	baldaCfg := balda.Config{App: doc.App, Balda: doc.Balda}
-	if _, err := baldaCfg.ResolveSecurityKey(); err != nil {
-		return preparedBaldaCommand{}, err
-	}
 	if requireChannel {
 		if err := validateBaldaChannelConfiguration(workingDir, baldaCfg); err != nil {
 			return preparedBaldaCommand{}, err
@@ -299,24 +292,6 @@ func loadBaldaCommandConfig(requireChannel bool) (preparedBaldaCommand, error) {
 		runtimeLoadOpts: runtimeLoadOpts,
 		database:        database,
 	}, nil
-}
-
-func applyApplicationSecurityKeyEnv(cfg *balda.AppConfig) {
-	// app.security_key is intentionally outside the historical balda subtree,
-	// while appconfig binds only the application-named subtree automatically.
-	// Preserve the public BALDA_APP_SECURITY_KEY contract explicitly, including
-	// an explicitly empty override.
-	if securityKey, ok := os.LookupEnv("BALDA_APP_SECURITY_KEY"); ok {
-		cfg.SecurityKey = securityKey
-	}
-}
-
-func applyHTTPBasePathEnv(cfg *balda.BaldaConfig) {
-	// appconfig drops null defaults before applying env overrides; LookupEnv also
-	// preserves an explicitly empty value, which selects the origin root.
-	if basePath, ok := os.LookupEnv("BALDA_HTTP_BASE_PATH"); ok {
-		cfg.HTTP.BasePath = &basePath
-	}
 }
 
 func validateBaldaChannelConfiguration(workingDir string, cfg balda.Config) error {

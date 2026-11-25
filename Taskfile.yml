@@ -22,7 +22,7 @@ tasks:
   test:
     desc: Run Go tests with the race detector
     cmds:
-      - go test -race ./...
+      - go test -race {{if .PACKAGES}}{{range splitList " " .PACKAGES}}{{shellQuote .}} {{end}}{{else}}./...{{end}} {{if .RUN}}-run {{shellQuote .RUN}}{{end}}
 
   lint:
     desc: Run the Go linter

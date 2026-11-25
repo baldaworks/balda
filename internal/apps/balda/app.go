@@ -161,8 +161,7 @@ func Module(
 	runtimeLoadOpts runtimeconfig.RuntimeLoadOptions,
 	defaultsYAML []byte,
 ) fx.Option {
-	securityKey, err := cfg.ResolveSecurityKey()
-	if err != nil {
+	if err := cfg.Validate(); err != nil {
 		return fx.Module("balda", fx.Error(err))
 	}
 	acpStartupTimeout, err := cfg.Balda.ResolveACPStartupTimeout()
@@ -347,7 +346,7 @@ func Module(
 			permissionConfig,
 		),
 		fx.Provide(
-			func() (*secrets.Root, error) { return secrets.NewRoot(securityKey) },
+			func() (*secrets.Root, error) { return secrets.NewRoot(cfg.Balda.Security.Key) },
 			func(root *secrets.Root) (*mcpmanage.Service, error) {
 				revisions, err := root.Protector(secrets.ScopeMCPRevision)
 				if err != nil {

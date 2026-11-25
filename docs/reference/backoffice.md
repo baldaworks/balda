@@ -391,7 +391,7 @@ requires reopening the page before retrying.
 API keys and explicit ACP environment values are write-only. The page shows
 only presence and environment variable names, and supports keep, replace, or
 clear. Protected revisions require
-`app.security_key`; back up that exact key with the database.
+`balda.security.key`; back up that exact key with the database.
 Configured secrets remain deployment-owned and are never copied into managed
 state.
 
@@ -406,7 +406,7 @@ disabled, deleted, incomplete, or otherwise unusable managed provider, so an
 administrator can repair it here. The first provider-backed operation resolves
 and builds the current graph; failure is limited to that operation and does not
 select a fallback provider. Retained encrypted-state integrity is an earlier
-startup boundary: a missing or mismatched `app.security_key` blocks startup
+startup boundary: a missing or mismatched `balda.security.key` blocks startup
 rather than exposing Backoffice against unreadable historical secrets.
 
 ## Web UI foundation
@@ -1020,7 +1020,7 @@ Retry does not dispatch a tool request. **Revoke authorization** requires confir
 and revokes every retained worker grant context, including existing sessions.
 Run one active writer for worker grants; keep the deployment credential key with
 the database backup. The credential key is the application-wide
-`app.security_key`; configure its format and deployment override as described in
+`balda.security.key`; configure its format and deployment override as described in
 [MCP credential configuration](configuration.md#protected-values-and-worker-grants).
 No tokens, client secrets or local bridge capabilities belong
 in logs, URLs used for recovery, exported read models or browser history caches.

@@ -38,7 +38,7 @@ func TestPreflightValidatesRetainedEncryptedStateBeforeRuntimeStartup(t *testing
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			cfg, norma, trace := acpWiringConfig(t, "300ms", "30s")
-			cfg.App.SecurityKey = tc.preflightKey
+			cfg.Balda.Security.Key = tc.preflightKey
 			if err := os.MkdirAll(cfg.Balda.StateDir, 0o700); err != nil {
 				t.Fatal(err)
 			}

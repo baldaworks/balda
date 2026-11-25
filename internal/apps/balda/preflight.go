@@ -52,8 +52,7 @@ func PreflightRuntime(
 	normaCfg runtimeconfig.RuntimeConfig,
 	runtimeLoadOpts runtimeconfig.RuntimeLoadOptions,
 ) error {
-	securityKey, err := cfg.ResolveSecurityKey()
-	if err != nil {
+	if err := cfg.Validate(); err != nil {
 		return err
 	}
 	acpStartupTimeout, err := cfg.Balda.ResolveACPStartupTimeout()
@@ -231,7 +230,7 @@ func PreflightRuntime(
 				return provider, nil
 			},
 			func() (*secrets.Root, error) {
-				return secrets.NewRoot(securityKey)
+				return secrets.NewRoot(cfg.Balda.Security.Key)
 			},
 			func(root *secrets.Root) (*secrets.Protector, error) {
 				return root.Protector(secrets.ScopeProviderRevision)
