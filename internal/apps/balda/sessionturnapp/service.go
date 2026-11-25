@@ -799,9 +799,6 @@ func (s *TurnExecutionService) Execute(ctx context.Context, req ExecutionRequest
 				}
 			}
 			if privateRun {
-				if s.privateOutput == nil {
-					return fmt.Errorf("private output recorder is unavailable")
-				}
 				failureText := ""
 				if terminalUnsuccessful {
 					failureText = providerTerminalMessage
@@ -811,6 +808,12 @@ func (s *TurnExecutionService) Execute(ctx context.Context, req ExecutionRequest
 				}
 				if failureText == "" {
 					failureText = permissionOutcomeTurnMessage(permissionOutcomes.Latest())
+				}
+				if silentScheduleSuccess(req.TurnSource, terminalStatus, responseText, failureText, terminalFinishReason) {
+					break
+				}
+				if s.privateOutput == nil {
+					return fmt.Errorf("private output recorder is unavailable")
 				}
 				if failureText == "" && strings.TrimSpace(responseText) == "" {
 					failureText = terminalTurnMessage(terminalFinishReason)
@@ -1004,6 +1007,25 @@ func privateRunEmptyMessage(source string) string {
 		return "The webhook run produced no output. Ask the operator to check Balda."
 	}
 	return "The scheduled run produced no report. Ask the operator to check Balda."
+}
+
+func silentScheduleSuccess(
+	source string,
+	status TerminalStatus,
+	responseText string,
+	failureText string,
+	finishReason genai.FinishReason,
+) bool {
+	if strings.TrimSpace(source) != turncmd.SourceSchedule || status != TerminalStatusSuccess ||
+		strings.TrimSpace(responseText) != "" || strings.TrimSpace(failureText) != "" {
+		return false
+	}
+	switch finishReason {
+	case genai.FinishReasonStop, genai.FinishReasonOther, genai.FinishReasonUnspecified:
+		return true
+	default:
+		return false
+	}
 }
 
 func successfulFormatTurn(event *adksession.Event, responseText string) bool {

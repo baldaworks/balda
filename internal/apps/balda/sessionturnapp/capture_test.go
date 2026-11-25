@@ -3,6 +3,7 @@ package sessionturnapp
 import (
 	"context"
 	"errors"
+	"fmt"
 	"iter"
 	"strings"
 	"testing"
@@ -31,6 +32,8 @@ type captureHook struct {
 type recordedScheduleOutput struct {
 	jobID  string
 	output string
+	failed bool
+	calls  int
 }
 
 type webhookTurnClaimFixture struct {
@@ -147,8 +150,9 @@ func (*oneShotRuntime) RuntimeStateValue(context.Context, string) (any, bool, er
 	return nil, false, nil
 }
 
-func (r *recordedScheduleOutput) RecordPrivateOutput(_ context.Context, jobID, output string, _ bool) error {
-	r.jobID, r.output = jobID, output
+func (r *recordedScheduleOutput) RecordPrivateOutput(_ context.Context, jobID, output string, failed bool) error {
+	r.jobID, r.output, r.failed = jobID, output, failed
+	r.calls++
 	return nil
 }
 
@@ -296,6 +300,86 @@ func TestPrivateScheduleWithoutLocatorRecordsOutputWithoutDeliveryOrMemoryCaptur
 	if len(dispatcher.envelopes) != 0 || len(capture.turns) != 0 {
 		t.Fatalf("private schedule leaked delivery or memory: envelopes=%d captures=%d",
 			len(dispatcher.envelopes), len(capture.turns))
+	}
+}
+
+func TestPrivateScheduleSilentSuccessSkipsOutputAndDelivery(t *testing.T) {
+	for _, deliver := range []bool{false, true} {
+		t.Run(fmt.Sprintf("deliver_%t", deliver), func(t *testing.T) {
+			output := &recordedScheduleOutput{}
+			dispatcher := &captureDispatcher{}
+			service := NewTurnExecutionServiceWithJobEventsAndCapture(dispatcher, nil, nil,
+				zerolog.Nop(), automode.DefaultMaxTurns, &captureHook{})
+			service.SetPrivateOutputRecorder(output)
+			adkRunner, agentSessionID := newCaptureTestRunner(t, func(invocationID string) []*adksession.Event {
+				done := adksession.NewEvent(context.Background(), invocationID)
+				done.TurnComplete = true
+				done.FinishReason = genai.FinishReasonStop
+				return []*adksession.Event{done}
+			})
+			err := service.Execute(t.Context(), ExecutionRequest{
+				Text: "scheduled input", Runner: adkRunner, UserID: "tg-101",
+				AgentSessionID: agentSessionID, SessionID: privateScheduleID, JobID: "scheduled-daily-slot",
+				Locator: baldasession.SessionLocator{ChannelType: turncmd.SourceSchedule, AddressKey: privateScheduleID,
+					AddressJSON: `{"run_id":"sch-private-run"}`, SessionID: privateScheduleID},
+				DeliveryLocator: baldasession.SessionLocator{ChannelType: "telegram", AddressKey: "123:0",
+					AddressJSON: `{"chat_id":123,"topic_id":0}`, SessionID: "tg-123-0"},
+				TurnSource: turncmd.SourceSchedule, Deliver: deliver,
+			})
+			if err != nil {
+				t.Fatalf("Execute() error = %v", err)
+			}
+			if output.calls != 0 || len(dispatcher.envelopes) != 0 {
+				t.Fatalf("silent success recorded output or delivery: output=%+v deliveries=%d", output, len(dispatcher.envelopes))
+			}
+		})
+	}
+}
+
+func TestPrivateScheduleEmptyExplicitFailureRemainsFailed(t *testing.T) {
+	output := &recordedScheduleOutput{}
+	service := NewTurnExecutionServiceWithJobEventsAndCapture(nil, nil, nil,
+		zerolog.Nop(), automode.DefaultMaxTurns, nil)
+	service.SetPrivateOutputRecorder(output)
+	adkRunner, agentSessionID := newCaptureTestRunner(t, func(invocationID string) []*adksession.Event {
+		done := adksession.NewEvent(context.Background(), invocationID)
+		done.TurnComplete = true
+		done.FinishReason = genai.FinishReasonMaxTokens
+		return []*adksession.Event{done}
+	})
+	err := service.Execute(t.Context(), ExecutionRequest{
+		Text: "scheduled input", Runner: adkRunner, UserID: "tg-101",
+		AgentSessionID: agentSessionID, SessionID: privateScheduleID, JobID: "scheduled-daily-slot",
+		Locator: baldasession.SessionLocator{ChannelType: turncmd.SourceSchedule, AddressKey: privateScheduleID,
+			AddressJSON: `{"run_id":"sch-private-run"}`, SessionID: privateScheduleID},
+		TurnSource: turncmd.SourceSchedule,
+	})
+	if err == nil || output.calls != 1 || !output.failed || !strings.Contains(output.output, "output limit") {
+		t.Fatalf("explicit failure error=%v output=%+v", err, output)
+	}
+}
+
+func TestPrivateWebhookEmptyOutputRemainsFailed(t *testing.T) {
+	output := &recordedScheduleOutput{}
+	service := NewTurnExecutionServiceWithJobEventsAndCapture(nil, nil, nil,
+		zerolog.Nop(), automode.DefaultMaxTurns, nil)
+	service.SetPrivateOutputRecorder(output)
+	service.SetWebhookTurnClaimer(&webhookTurnClaimFixture{})
+	adkRunner, agentSessionID := newCaptureTestRunner(t, func(invocationID string) []*adksession.Event {
+		done := adksession.NewEvent(context.Background(), invocationID)
+		done.TurnComplete = true
+		done.FinishReason = genai.FinishReasonStop
+		return []*adksession.Event{done}
+	})
+	err := service.Execute(t.Context(), ExecutionRequest{
+		Text: "webhook input", Runner: adkRunner, UserID: "tg-101",
+		AgentSessionID: agentSessionID, SessionID: privateWebhookID, JobID: "webhook-route-123",
+		Locator: baldasession.SessionLocator{ChannelType: turncmd.SourceWebhook, AddressKey: privateWebhookID,
+			AddressJSON: "{}", SessionID: privateWebhookID},
+		TurnSource: turncmd.SourceWebhook,
+	})
+	if err == nil || output.calls != 1 || !output.failed || output.output == "" {
+		t.Fatalf("webhook empty outcome error=%v output=%+v", err, output)
 	}
 }
 

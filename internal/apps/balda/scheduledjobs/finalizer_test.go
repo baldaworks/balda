@@ -74,6 +74,9 @@ func TestRunFinalizerWaitsForSentReportAndRunDetailUsesItsPayload(t *testing.T) 
 		CreatedBy: "owner", CompletedAt: now}); err != nil {
 		t.Fatal(err)
 	}
+	if err := provider.Jobs().RecordScheduledOutput(ctx, jobID, "the exact sent report"); err != nil {
+		t.Fatal(err)
+	}
 	closer := &recordingRunCloser{}
 	finalizer := NewRunFinalizer(provider.ScheduleRuns(), provider.ScheduledJobs(), provider.Jobs(), provider.Jobs(), closer)
 	if err := finalizer.Settle(ctx, 10); err != nil || len(closer.calls) != 0 {
@@ -112,6 +115,82 @@ func TestRunFinalizerWaitsForSentReportAndRunDetailUsesItsPayload(t *testing.T) 
 	detail, err := manager.RunDetail(ctx, "daily", runID, schedulecmd.Authority{})
 	if err != nil || detail.Input != input || detail.Output != "the exact sent report" || detail.Run.State != runStateSucceeded {
 		t.Fatalf("run detail = %+v, err=%v", detail, err)
+	}
+}
+
+func TestRunFinalizerSettlesSilentSuccessWithoutReportDelivery(t *testing.T) {
+	for _, keepSession := range []bool{false, true} {
+		name := "ephemeral"
+		if keepSession {
+			name = "retained"
+		}
+		t.Run(name, func(t *testing.T) {
+			ctx := t.Context()
+			provider, err := state.NewSQLiteProvider(ctx, filepath.Join(t.TempDir(), "state.db"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = provider.Close() })
+			now := time.Now().UTC()
+			const scheduleID = "daily"
+			jobID := "scheduled-silent-" + name
+			runID := "run-silent-" + name
+			snapshot := state.ScheduledJobRecord{
+				JobID: scheduleID, Content: "input", ReportToEnabled: true, KeepSession: keepSession,
+			}
+			if keepSession {
+				snapshot.Source = state.ScheduledJobSourceManaged
+				snapshot.Enabled = true
+				snapshot.DefinitionVersion = 1
+				snapshot.ScheduleSpec = "0 9 * * *"
+				snapshot.Status = state.ScheduledJobStatusActive
+				snapshot.NextRunAt = now.Add(time.Hour)
+				if err := provider.ScheduledJobs().Upsert(ctx, snapshot); err != nil {
+					t.Fatal(err)
+				}
+			}
+			payload, err := json.Marshal(snapshot)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := provider.ScheduleRuns().Create(ctx, state.ScheduleRunRecord{
+				RunID: runID, ScheduleID: scheduleID, Trigger: state.ScheduleRunTriggerCron,
+				TriggerKey: scheduleID + "@slot", DefinitionVersion: 1, RequestedAt: now,
+				DispatchState: state.ScheduleRunDispatched, ExecutionJobID: jobID, PayloadJSON: string(payload),
+			}); err != nil {
+				t.Fatal(err)
+			}
+			sessionID := turncmd.ScheduledExecutionSessionID(jobID)
+			if keepSession {
+				sessionID = turncmd.PersistentScheduledExecutionSessionID(scheduleID)
+			}
+			if _, err := provider.Jobs().CreateJob(ctx, state.JobRecord{
+				ID: jobID, SessionID: sessionID, Objective: "input", Status: state.JobStatusCompleted,
+				CreatedBy: "owner", CompletedAt: now,
+			}); err != nil {
+				t.Fatal(err)
+			}
+
+			closer := &recordingRunCloser{}
+			finalizer := NewRunFinalizer(provider.ScheduleRuns(), provider.ScheduledJobs(), provider.Jobs(), provider.Jobs(), closer)
+			if err := finalizer.Settle(ctx, 10); err != nil {
+				t.Fatal(err)
+			}
+			wantCloseCalls := 1
+			if keepSession {
+				wantCloseCalls = 0
+			}
+			if len(closer.calls) != wantCloseCalls {
+				t.Fatalf("close calls = %v, want %d", closer.calls, wantCloseCalls)
+			}
+			if err := finalizer.Settle(ctx, 10); err != nil || len(closer.calls) != wantCloseCalls {
+				t.Fatalf("repeated settle: calls=%v err=%v", closer.calls, err)
+			}
+			unclosed, err := provider.ScheduleRuns().ListUnclosedDispatched(ctx, time.Time{}, "", 10)
+			if err != nil || len(unclosed) != 0 {
+				t.Fatalf("unclosed silent runs = %v, err=%v", unclosed, err)
+			}
+		})
 	}
 }
 
@@ -370,6 +449,11 @@ func TestRunFinalizerDoesNotStarveNoReportRunBehindPendingDelivery(t *testing.T)
 			Objective: "input", Status: state.JobStatusCompleted, CreatedBy: "owner",
 		}); err != nil {
 			t.Fatal(err)
+		}
+		if testCase.report {
+			if err := provider.Jobs().RecordScheduledOutput(ctx, testCase.jobID, "pending report"); err != nil {
+				t.Fatal(err)
+			}
 		}
 	}
 	closer := &recordingRunCloser{}

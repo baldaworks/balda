@@ -8,7 +8,9 @@ description: Run recurring engineering tasks in private sessions and optionally 
 Schedules let Balda run a recurring task without a chat message. By default,
 each run starts in a new private session. An optional **Keep session between
 runs** setting reuses one private session for that schedule. Balda stores every
-result in Backoffice and can optionally send the final report to a chat.
+run and its available output in Backoffice and can optionally send a final
+report to a chat. A run may also succeed without visible output; in that case
+its output stays empty and Balda sends no chat message.
 
 Use a schedule for work such as:
 
@@ -152,8 +154,10 @@ sent because **Report to** is empty.
 flowchart LR
     Trigger["Cron slot or Run now"] --> Snapshot["Freeze task and report destination"]
     Snapshot --> Session["Run task in a private session"]
-    Session --> Store["Store input, status, and output"]
-    Store --> Report{"Report to configured?"}
+    Session --> Store["Store input, status, and available output"]
+    Store --> Output{"Visible final output?"}
+    Output -->|Yes| Report{"Report to configured?"}
+    Output -->|No| History["Keep run in history"]
     Report -->|Yes| Deliver["Send final result to chat"]
     Report -->|No| History["Keep result in run history"]
     Deliver --> History
@@ -167,7 +171,10 @@ an alias afterward affects later runs, not one already queued or running.
 
 Only the final output or a bounded failure message is sent to the destination.
 Progress updates and permission questions are not sent there. A task that needs
-interactive approval cannot pause and ask the recipient; it fails closed.
+interactive approval cannot pause and ask the recipient; it fails closed. If a
+successful run finishes without visible final output, progress is not promoted
+to a report: the run succeeds with empty output and skips delivery even when
+**Report to** is configured.
 
 ## Run and monitor a schedule
 
@@ -186,7 +193,8 @@ The history distinguishes scheduled and manual runs and shows states such as:
 
 Open an individual run to inspect its frozen task input, selected concrete
 locator, durable agent output, and delivery state. A delivery failure does not
-erase a successfully generated result.
+erase a successfully generated result. A successful run with empty output has
+no delivery state because there was no report to send.
 
 ## Change or stop a schedule
 
@@ -231,9 +239,11 @@ runtime pressure.
 
 ### The task succeeded but no chat message arrived
 
-Check the run's delivery state and selected locator. The output remains in run
-history even when delivery is pending or failed. If **Report to** was empty,
-no external message is expected.
+First inspect the run output. If the run succeeded with empty output, no report
+was created and no external message is expected, even when **Report to** was
+configured. Otherwise, check the run's delivery state and selected locator. A
+non-empty output remains in run history when delivery is pending or failed. If
+**Report to** was empty, no external message is expected.
 
 ### Editing an alias did not redirect an active run
 
