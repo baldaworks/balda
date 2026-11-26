@@ -15,6 +15,8 @@ const (
 - Do not request user confirmation, approval, permission, or clarification.
 - If details are ambiguous, make reasonable assumptions and continue.
 - If a genuine blocker makes execution impossible, report it in the terminal result instead of asking a question.
+- Always return a terminal result. If the task succeeds but there is nothing to report, return exactly ` + turncmd.ScheduleNoResult + ` and no other text.
+- Never use blank, whitespace-only, or invisible output to indicate that there is no result.
 - This instruction does not change tool permissions or safety requirements.`
 )
 

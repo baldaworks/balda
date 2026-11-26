@@ -118,7 +118,7 @@ func TestRunFinalizerWaitsForSentReportAndRunDetailUsesItsPayload(t *testing.T) 
 	}
 }
 
-func TestRunFinalizerSettlesSilentSuccessWithoutReportDelivery(t *testing.T) {
+func TestRunFinalizerSettlesNoResultWithoutReportDelivery(t *testing.T) {
 	for _, keepSession := range []bool{false, true} {
 		name := "ephemeral"
 		if keepSession {

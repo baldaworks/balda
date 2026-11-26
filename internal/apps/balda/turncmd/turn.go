@@ -26,6 +26,9 @@ const (
 	SourceWebhook    = "webhook"
 	SourceSchedule   = "schedule"
 	SourceAuto       = "auto"
+
+	// ScheduleNoResult is the exact terminal response for a successful schedule with nothing to report.
+	ScheduleNoResult = "NO_RESULT"
 )
 
 // ErrScheduledReportQueued marks a failed run whose bounded final report is already queued.

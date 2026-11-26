@@ -303,7 +303,7 @@ func TestPrivateScheduleWithoutLocatorRecordsOutputWithoutDeliveryOrMemoryCaptur
 	}
 }
 
-func TestPrivateScheduleSilentSuccessSkipsOutputAndDelivery(t *testing.T) {
+func TestPrivateScheduleNoResultSkipsOutputAndDelivery(t *testing.T) {
 	for _, deliver := range []bool{false, true} {
 		t.Run(fmt.Sprintf("deliver_%t", deliver), func(t *testing.T) {
 			output := &recordedScheduleOutput{}
@@ -313,6 +313,7 @@ func TestPrivateScheduleSilentSuccessSkipsOutputAndDelivery(t *testing.T) {
 			service.SetPrivateOutputRecorder(output)
 			adkRunner, agentSessionID := newCaptureTestRunner(t, func(invocationID string) []*adksession.Event {
 				done := adksession.NewEvent(context.Background(), invocationID)
+				done.Content = genai.NewContentFromText(turncmd.ScheduleNoResult, genai.RoleModel)
 				done.TurnComplete = true
 				done.FinishReason = genai.FinishReasonStop
 				return []*adksession.Event{done}
@@ -330,7 +331,51 @@ func TestPrivateScheduleSilentSuccessSkipsOutputAndDelivery(t *testing.T) {
 				t.Fatalf("Execute() error = %v", err)
 			}
 			if output.calls != 0 || len(dispatcher.envelopes) != 0 {
-				t.Fatalf("silent success recorded output or delivery: output=%+v deliveries=%d", output, len(dispatcher.envelopes))
+				t.Fatalf("no-result outcome recorded output or delivery: output=%+v deliveries=%d", output, len(dispatcher.envelopes))
+			}
+		})
+	}
+}
+
+func TestPrivateScheduleInvisibleOutputRemainsFailed(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		output string
+	}{
+		{name: "empty"},
+		{name: "whitespace", output: " \t\n"},
+		{name: "zero width space", output: "\u200b"},
+		{name: "word joiner", output: "\u2060"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			output := &recordedScheduleOutput{}
+			dispatcher := &captureDispatcher{}
+			service := NewTurnExecutionServiceWithJobEventsAndCapture(dispatcher, nil, nil,
+				zerolog.Nop(), automode.DefaultMaxTurns, nil)
+			service.SetPrivateOutputRecorder(output)
+			adkRunner, agentSessionID := newCaptureTestRunner(t, func(invocationID string) []*adksession.Event {
+				done := adksession.NewEvent(context.Background(), invocationID)
+				if test.output != "" {
+					done.Content = genai.NewContentFromText(test.output, genai.RoleModel)
+				}
+				done.TurnComplete = true
+				done.FinishReason = genai.FinishReasonStop
+				return []*adksession.Event{done}
+			})
+			err := service.Execute(t.Context(), ExecutionRequest{
+				Text: "scheduled input", Runner: adkRunner, UserID: "tg-101",
+				AgentSessionID: agentSessionID, SessionID: privateScheduleID, JobID: "scheduled-daily-slot",
+				Locator: baldasession.SessionLocator{ChannelType: turncmd.SourceSchedule, AddressKey: privateScheduleID,
+					AddressJSON: `{"run_id":"sch-private-run"}`, SessionID: privateScheduleID},
+				DeliveryLocator: baldasession.SessionLocator{ChannelType: "telegram", AddressKey: "123:0",
+					AddressJSON: `{"chat_id":123,"topic_id":0}`, SessionID: "tg-123-0"},
+				TurnSource: turncmd.SourceSchedule, Deliver: true,
+			})
+			if !errors.Is(err, turncmd.ErrScheduledReportQueued) || output.calls != 1 || !output.failed {
+				t.Fatalf("Execute() error = %v, output = %+v; want queued bounded failure", err, output)
+			}
+			if !hasVisibleText(output.output) || output.output == test.output || len(dispatcher.envelopes) != 1 {
+				t.Fatalf("failure output = %q, deliveries = %d; want one visible bounded report", output.output, len(dispatcher.envelopes))
 			}
 		})
 	}

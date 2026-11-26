@@ -9,8 +9,9 @@ Schedules let Balda run a recurring task without a chat message. By default,
 each run starts in a new private session. An optional **Keep session between
 runs** setting reuses one private session for that schedule. Balda stores every
 run and its available output in Backoffice and can optionally send a final
-report to a chat. A run may also succeed without visible output; in that case
-its output stays empty and Balda sends no chat message.
+report to a chat. When a task has nothing to report, the schedule agent returns
+the reserved `NO_RESULT` outcome. Balda stores the run as successful with empty
+public output and sends no chat message.
 
 Use a schedule for work such as:
 
@@ -171,10 +172,11 @@ an alias afterward affects later runs, not one already queued or running.
 
 Only the final output or a bounded failure message is sent to the destination.
 Progress updates and permission questions are not sent there. A task that needs
-interactive approval cannot pause and ask the recipient; it fails closed. If a
-successful run finishes without visible final output, progress is not promoted
-to a report: the run succeeds with empty output and skips delivery even when
-**Report to** is configured.
+interactive approval cannot pause and ask the recipient; it fails closed. The
+reserved `NO_RESULT` terminal outcome is not promoted to a report: the run
+succeeds with empty public output and skips delivery even when **Report to** is
+configured. Blank or invisible-only provider output is a failure, not a silent
+success.
 
 ## Run and monitor a schedule
 
@@ -193,8 +195,9 @@ The history distinguishes scheduled and manual runs and shows states such as:
 
 Open an individual run to inspect its frozen task input, selected concrete
 locator, durable agent output, and delivery state. A delivery failure does not
-erase a successfully generated result. A successful run with empty output has
-no delivery state because there was no report to send.
+erase a successfully generated result. A successful `NO_RESULT` run exposes
+empty public output and has no delivery state because there was no report to
+send.
 
 ## Change or stop a schedule
 
@@ -239,11 +242,12 @@ runtime pressure.
 
 ### The task succeeded but no chat message arrived
 
-First inspect the run output. If the run succeeded with empty output, no report
-was created and no external message is expected, even when **Report to** was
-configured. Otherwise, check the run's delivery state and selected locator. A
-non-empty output remains in run history when delivery is pending or failed. If
-**Report to** was empty, no external message is expected.
+First inspect the run output. If the run succeeded with empty output, the agent
+returned the reserved `NO_RESULT` outcome, so no report was created and no
+external message is expected even when **Report to** was configured. Otherwise,
+check the run's delivery state and selected locator. A non-empty output remains
+in run history when delivery is pending or failed. If **Report to** was empty,
+no external message is expected.
 
 ### Editing an alias did not redirect an active run
 
