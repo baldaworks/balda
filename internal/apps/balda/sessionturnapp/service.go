@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode"
 
 	baldaexecution "github.com/baldaworks/balda/internal/apps/balda/actorcmd"
 	"github.com/baldaworks/balda/internal/apps/balda/appports"
@@ -809,13 +810,13 @@ func (s *TurnExecutionService) Execute(ctx context.Context, req ExecutionRequest
 				if failureText == "" {
 					failureText = permissionOutcomeTurnMessage(permissionOutcomes.Latest())
 				}
-				if silentScheduleSuccess(req.TurnSource, terminalStatus, responseText, failureText, terminalFinishReason) {
+				if scheduleNoResult(req.TurnSource, terminalStatus, responseText, failureText, terminalFinishReason) {
 					break
 				}
 				if s.privateOutput == nil {
 					return fmt.Errorf("private output recorder is unavailable")
 				}
-				if failureText == "" && strings.TrimSpace(responseText) == "" {
+				if failureText == "" && privateRunOutputEmpty(req.TurnSource, responseText) {
 					failureText = terminalTurnMessage(terminalFinishReason)
 				}
 				failed := terminalUnsuccessful || failureText != ""
@@ -1009,7 +1010,7 @@ func privateRunEmptyMessage(source string) string {
 	return "The scheduled run produced no report. Ask the operator to check Balda."
 }
 
-func silentScheduleSuccess(
+func scheduleNoResult(
 	source string,
 	status TerminalStatus,
 	responseText string,
@@ -1017,7 +1018,7 @@ func silentScheduleSuccess(
 	finishReason genai.FinishReason,
 ) bool {
 	if strings.TrimSpace(source) != turncmd.SourceSchedule || status != TerminalStatusSuccess ||
-		strings.TrimSpace(responseText) != "" || strings.TrimSpace(failureText) != "" {
+		strings.TrimSpace(responseText) != turncmd.ScheduleNoResult || strings.TrimSpace(failureText) != "" {
 		return false
 	}
 	switch finishReason {
@@ -1026,6 +1027,22 @@ func silentScheduleSuccess(
 	default:
 		return false
 	}
+}
+
+func hasVisibleText(text string) bool {
+	for _, r := range text {
+		if !unicode.IsSpace(r) && !unicode.IsControl(r) && !unicode.In(r, unicode.Cf) {
+			return true
+		}
+	}
+	return false
+}
+
+func privateRunOutputEmpty(source, text string) bool {
+	if strings.TrimSpace(source) == turncmd.SourceSchedule {
+		return !hasVisibleText(text)
+	}
+	return strings.TrimSpace(text) == ""
 }
 
 func successfulFormatTurn(event *adksession.Event, responseText string) bool {

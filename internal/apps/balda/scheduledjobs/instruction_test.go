@@ -62,6 +62,9 @@ func TestScheduledRunInstructionStatesAutonomousExecutionContract(t *testing.T) 
 		"Do not request user confirmation, approval, permission, or clarification",
 		"make reasonable assumptions and continue",
 		"report it in the terminal result instead of asking a question",
+		"Always return a terminal result",
+		"return exactly " + turncmd.ScheduleNoResult + " and no other text",
+		"Never use blank, whitespace-only, or invisible output",
 		"does not change tool permissions or safety requirements",
 	} {
 		if !strings.Contains(scheduledRunInstruction, want) {
